@@ -98,11 +98,11 @@ def main():
     # --------------------------------------------------
     trainer = pl.Trainer(
         max_epochs=100,
-        accelerator="gpu",
+        accelerator="auto",
         devices=1,
         precision=32,
         callbacks=[checkpoint_callback, lr_monitor, early_stop],
-        log_every_n_steps=1
+        log_every_n_steps=10
     )
 
     # --------------------------------------------------
