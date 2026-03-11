@@ -18,6 +18,7 @@ class IlluminantOptimizer(nn.Module):
         super().__init__()
         self.num_illuminants = num_illuminants
         self.led_library = load_led_library(mat_path=led_path)
+        self.register_buffer("led_library", self.led_library)
 
         self.logits = nn.Parameter(
             torch.randn(num_illuminants, 15, 20) * 0.01
