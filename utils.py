@@ -79,6 +79,8 @@ def render_rgb(reflectance, illuminants, camera_sens="/Users/kolyszko/Documents/
     camera_spd = load_camera_SPD(camera_sens)
     illuminants = illuminants[:, ::10]  # ill[K, 301] ---> ill[K, 31]
     # risposta spettrale combinata: [K, 3, 31]
+    illuminants = illuminants.to(device='gpu', dtype=reflectance.dtype)
+    camera_spd = camera_spd.to(device='gpu', dtype=reflectance.dtype)
     response = illuminants[:, None, :] * camera_spd[None, :, :]
 
     # somma spettrale
