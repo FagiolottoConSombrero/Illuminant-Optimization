@@ -8,9 +8,9 @@ def main():
     # --------------------------------------------------
     # 1. paths
     # --------------------------------------------------
-    data_dir = "/Volumes/Lexar/31bands_h5"
-    led_path = "/Users/kolyszko/Documents/MATLAB/Thouslite5.mat"
-    camera_path = "/Users/kolyszko/Documents/NIKON-D810.csv"
+    data_dir = "/home/acp/datasets/SSD1/31bands_h5"
+    led_path = "/home/acp/Documenti/Thouslite5.mat"
+    camera_path = "/home/acp/Documenti/NIKON-D810.csv"
     checkpoint_dir = "./checkpoints"
 
     os.makedirs(checkpoint_dir, exist_ok=True)
