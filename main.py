@@ -90,7 +90,8 @@ def main():
     early_stop = pl.callbacks.EarlyStopping(
         monitor="val_loss",
         mode="min",
-        patience=50
+        patience=50,
+        verbose=True
     )
 
     # --------------------------------------------------
