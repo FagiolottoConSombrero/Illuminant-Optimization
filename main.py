@@ -46,7 +46,7 @@ def main():
         train_dataset,
         batch_size=2,
         shuffle=True,
-        num_workers=os.cpu_count(),
+        num_workers=0,
         pin_memory=torch.cuda.is_available(),
         persistent_workers=False
     )
@@ -55,9 +55,9 @@ def main():
         val_dataset,
         batch_size=2,
         shuffle=False,
-        num_workers=os.cpu_count(),
+        num_workers=0,
         pin_memory=torch.cuda.is_available(),
-        persistent_workers = False
+        persistent_workers=False
     )
 
     # --------------------------------------------------
