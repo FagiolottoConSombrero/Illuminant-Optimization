@@ -48,7 +48,7 @@ def main():
         shuffle=True,
         num_workers=os.cpu_count(),
         pin_memory=torch.cuda.is_available(),
-        persistent_workers=True
+        persistent_workers=False
     )
 
     val_loader = DataLoader(
@@ -57,7 +57,7 @@ def main():
         shuffle=False,
         num_workers=os.cpu_count(),
         pin_memory=torch.cuda.is_available(),
-        persistent_workers = True
+        persistent_workers = False
     )
 
     # --------------------------------------------------
