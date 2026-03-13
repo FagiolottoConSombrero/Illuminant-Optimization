@@ -90,3 +90,76 @@ def render_rgb(reflectance, illuminants, camera_sens="/Users/kolyszko/Documents/
 
     return rgb1, rgb2
 
+
+def normalize_illuminants(illuminants, eps=1e-8):
+    """
+    illuminants: [K, L]
+    Normalizzazione per energia totale, come nel paper che parla di
+    normalized SPD per E^(1), E^(2).
+    """
+    return illuminants / (illuminants.sum(dim=-1, keepdim=True) + eps)
+
+
+def illumination_diversity_loss(illuminants, eps=1e-6):
+    """
+    Ldiv del paper, adattata al caso K=2.
+
+    illuminants: [2, L]
+
+    Ritorna una loss da minimizzare:
+        mean( 1 / (|E1 - E2| + eps) )
+    """
+    if illuminants.shape[0] != 2:
+        raise ValueError(f"Mi aspetto 2 illuminanti, ma ho shape {tuple(illuminants.shape)}")
+
+    E = normalize_illuminants(illuminants, eps=eps)
+    diff = torch.abs(E[0] - E[1])  # [L]
+    loss = torch.mean(1.0 / (diff + eps))
+    return loss
+
+
+def illumination_trend_loss(illuminants, eps=1e-6):
+    """
+    Ltrend del paper, adattata al caso K=2.
+
+    illuminants: [2, L]
+
+    DeltaE = E[:,1:] - E[:,:-1]
+    loss = mean( 1 / (|DeltaE1 - DeltaE2| + eps) )
+    """
+    if illuminants.shape[0] != 2:
+        raise ValueError(f"Mi aspetto 2 illuminanti, ma ho shape {tuple(illuminants.shape)}")
+
+    E = normalize_illuminants(illuminants, eps=eps)
+
+    dE1 = E[0, 1:] - E[0, :-1]   # [L-1]
+    dE2 = E[1, 1:] - E[1, :-1]   # [L-1]
+
+    diff_trend = torch.abs(dE1 - dE2)
+    loss = torch.mean(1.0 / (diff_trend + eps))
+    return loss
+
+
+def illumination_spec_regularization(illuminants, eps=1e-6):
+    """
+    Peso uguale per Ldiv e Ltrend.
+
+    illuminants: [2, L]
+    """
+    l_div = illumination_diversity_loss(illuminants, eps=eps)
+    l_trend = illumination_trend_loss(illuminants, eps=eps)
+
+    loss = l_div + l_trend
+
+    return loss, {"illum_div": l_div.detach(), "illum_trend": l_trend.detach()}
+
+
+def mrae(pred, target, eps=1e-8):
+    """
+    Mean Relative Absolute Error
+
+    pred   : [B,C,H,W]
+    target : [B,C,H,W]
+    """
+    return torch.mean(torch.abs(pred - target) / (target + eps))
+

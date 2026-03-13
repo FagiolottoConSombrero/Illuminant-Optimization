@@ -107,18 +107,26 @@ class JointNetwork(pl.LightningModule):
         # 2.. Generate RGB Images
         rgb1, rgb2 = render_rgb(x, ills, self.camera_spd_path)
         in_rgb = torch.cat((rgb1, rgb2), dim=1)
-        return self.net(in_rgb)
+        return self.net(in_rgb), ills
 
     def step(self, batch, stage):
         ref = batch  # [B,31,H,W]
 
-        recon = self(ref)
+        recon, ills = self(ref, return_illuminants=True)
 
-        loss = reconstruction_loss(recon, ref)
-        mae = torch.mean(torch.abs(recon - ref))
+        # reconstruction loss
+        loss_rec = reconstruction_loss(recon, ref)
+
+        # illuminant regularization
+        loss_illum, _ = illumination_spec_regularization(ills)
+
+        loss = loss_rec + loss_illum
+
+        # metric
+        mrae_val = mrae(recon, ref)
 
         self.log(f"{stage}_loss", loss, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
-        self.log(f"{stage}_mae", mae, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
+        self.log(f"{stage}_mrae", mrae_val, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
 
         return loss
 
