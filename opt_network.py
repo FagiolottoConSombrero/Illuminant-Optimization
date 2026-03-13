@@ -112,7 +112,7 @@ class JointNetwork(pl.LightningModule):
     def step(self, batch, stage):
         ref = batch  # [B,31,H,W]
 
-        recon, ills = self(ref, return_illuminants=True)
+        recon, ills = self(ref)
 
         # reconstruction loss
         loss_rec = reconstruction_loss(recon, ref)
