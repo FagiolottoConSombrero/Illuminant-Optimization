@@ -64,7 +64,7 @@ def main():
     # 5. model
     # --------------------------------------------------
     model = JointNetwork(
-        lr=1e-4,
+        lr=1e-3,
         patience=50,
         model_type=1,
         n_ill=2,
@@ -98,7 +98,7 @@ def main():
     # 7. trainer
     # --------------------------------------------------
     trainer = pl.Trainer(
-        max_epochs=300,
+        max_epochs=1000,
         accelerator="auto",
         devices=1,
         precision=32,
