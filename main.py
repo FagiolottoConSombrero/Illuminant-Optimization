@@ -64,7 +64,7 @@ def main():
     # 5. model
     # --------------------------------------------------
     model = JointNetwork(
-        lr=1e-3,
+        lr=1e-4,
         patience=50,
         model_type=1,
         n_ill=2,
