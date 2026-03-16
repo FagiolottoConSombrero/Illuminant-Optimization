@@ -53,6 +53,83 @@ class IlluminantOptimizer(nn.Module):
         return illuminants
 
 
+class IlluminantOptimizerL(nn.Module):
+    """
+    Ottimizza K illuminanti scegliendo, per ciascuno dei 15 LED,
+    una tra 20 curve misurate.
+
+    led_library: [15, 20, L]
+    output:      [K, L]
+    """
+
+    def __init__(
+        self,
+        num_illuminants=2,
+        led_path="",
+        latent_dim=128,
+        hidden_dim=256,
+        temperature=1.0
+    ):
+        super().__init__()
+
+        self.num_illuminants = num_illuminants
+        self.temperature = temperature
+
+        led_library = load_led_library(mat_path=led_path)   # [15,20,L]
+        self.register_buffer("led_library", led_library)
+
+        # un embedding learnable per ciascun illuminante
+        self.illum_embedding = nn.Parameter(
+            torch.randn(num_illuminants, latent_dim) * 0.02
+        )
+
+        # piccolo MLP che produce i logits [K,15,20]
+        self.mlp = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, 15 * 20)
+        )
+
+    def forward(self, hard=False, return_probs=False, return_logits=False):
+        """
+        Returns
+        -------
+        illuminants : [K, L]
+        """
+        K = self.num_illuminants
+
+        logits = self.mlp(self.illum_embedding).view(K, 15, 20)   # [K,15,20]
+
+        if hard:
+            probs = F.gumbel_softmax(
+                logits,
+                tau=self.temperature,
+                hard=True,
+                dim=-1
+            )
+        else:
+            probs = F.softmax(logits / self.temperature, dim=-1)
+
+        # [K,15,L]
+        selected_curves = torch.einsum("kic,icl->kil", probs, self.led_library)
+
+        # [K,L]
+        illuminants = selected_curves.sum(dim=1)
+
+        out = [illuminants]
+
+        if return_probs:
+            out.append(probs)
+        if return_logits:
+            out.append(logits)
+
+        if len(out) == 1:
+            return out[0]
+        return tuple(out)
+
+
 class SpectralMLP(nn.Module):
     """
     Input:  (B, K, H, W)
@@ -97,7 +174,7 @@ class JointNetwork(pl.LightningModule):
         self.led_path = led_path
         self.camera_spd_path = camera_spd_path
 
-        self.ill_optimizer = IlluminantOptimizer(num_illuminants=self.n_ill, led_path=self.led_path)
+        self.ill_optimizer = IlluminantOptimizerL(num_illuminants=self.n_ill, led_path=self.led_path)
         if model_type == 1:
             self.net = SpectralMLP(in_dim=self.in_dim)  # poi clamp nella loss
 
