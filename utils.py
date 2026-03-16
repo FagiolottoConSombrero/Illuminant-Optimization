@@ -140,18 +140,48 @@ def illumination_trend_loss(illuminants, eps=1e-6):
     return loss
 
 
-def illumination_spec_regularization(illuminants, eps=1e-6):
+def illumination_nonzero_loss(illuminants, tau=0.15, eps=1e-6):
     """
-    Peso uguale per Ldiv e Ltrend.
+    Lnonzero del paper, adattata al caso generale K illuminanti.
+
+    illuminants: [K, L]
+
+    Penalizza bande con intensità troppo bassa.
+    Se E(k, l) < tau, aggiunge:
+        1 / (E(k, l) + eps)
+
+    Nota:
+    - applichiamo la loss sugli illuminanti normalizzati, per coerenza
+      con le altre due loss.
+    - tau va quindi interpretata nello spazio normalizzato.
+    """
+    E = normalize_illuminants(illuminants, eps=eps)   # [K, L]
+
+    mask = (E < tau).float()                          # [K, L]
+    penalty = mask / (E + eps)                        # [K, L]
+
+    loss = torch.mean(penalty)
+    return loss
+
+
+def illumination_spec_regularization(illuminants, tau=0.15, eps=1e-6):
+    """
+    Peso uguale per:
+        Ldiv + Ltrend + Lnonzero
 
     illuminants: [2, L]
     """
     l_div = illumination_diversity_loss(illuminants, eps=eps)
     l_trend = illumination_trend_loss(illuminants, eps=eps)
+    l_nonzero = illumination_nonzero_loss(illuminants, tau=tau, eps=eps)
 
-    loss = l_div + l_trend
+    loss = l_div + l_trend + l_nonzero
 
-    return loss, {"illum_div": l_div.detach(), "illum_trend": l_trend.detach()}
+    return loss, {
+        "illum_div": l_div.detach(),
+        "illum_trend": l_trend.detach(),
+        "illum_nonzero": l_nonzero.detach(),
+    }
 
 
 def mrae(pred, target, eps=1e-8):
