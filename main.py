@@ -11,7 +11,7 @@ def main():
     data_dir = "/home/acp/datasets/SSD1/31bands_h5"
     led_path = "/home/acp/Documenti/Thouslite5.mat"
     camera_path = "/home/acp/Documenti/NIKON-D810.csv"
-    checkpoint_dir = "./run_6_new_loss_new_ill_model_500_epochs"
+    checkpoint_dir = "./run_7_new_model_500_epochs"
 
     os.makedirs(checkpoint_dir, exist_ok=True)
 
