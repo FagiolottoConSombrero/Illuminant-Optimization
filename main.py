@@ -11,7 +11,7 @@ def main():
     data_dir = "/home/acp/datasets/SSD1/31bands_h5"
     led_path = "/home/acp/Documenti/Thouslite5.mat"
     camera_path = "/home/acp/Documenti/NIKON-D810.csv"
-    checkpoint_dir = "./run_4_new_loss_1000_epochs"
+    checkpoint_dir = "./run_5_new_ill_model_500_epochs"
 
     os.makedirs(checkpoint_dir, exist_ok=True)
 
@@ -64,7 +64,7 @@ def main():
     # 5. model
     # --------------------------------------------------
     model = JointNetwork(
-        lr=1e-3,
+        lr=1e-4,
         patience=50,
         model_type=1,
         n_ill=2,
@@ -98,7 +98,7 @@ def main():
     # 7. trainer
     # --------------------------------------------------
     trainer = pl.Trainer(
-        max_epochs=1000,
+        max_epochs=500,
         accelerator="auto",
         devices=1,
         precision=32,
