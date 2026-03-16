@@ -129,6 +129,165 @@ class IlluminantOptimizerL(nn.Module):
             return out[0]
         return tuple(out)
 
+# =========================================================
+# MDPM
+# =========================================================
+
+class MDPM(nn.Module):
+    """
+    Multi-path Deep Residual Module
+
+    - preprocessing conv
+    - 3 rami paralleli: 1x1, 3x3, 3x3 dilated(rate=4)
+    - concat + fusion conv
+    - residual add
+    """
+    def __init__(self, channels: int):
+        super().__init__()
+
+        self.pre = nn.Sequential(
+            nn.Conv2d(channels, channels, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True)
+        )
+
+        self.path1 = nn.Sequential(
+            nn.Conv2d(channels, channels, kernel_size=1, padding=0),
+            nn.ReLU(inplace=True)
+        )
+
+        self.path2 = nn.Sequential(
+            nn.Conv2d(channels, channels, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True)
+        )
+
+        self.path3 = nn.Sequential(
+            nn.Conv2d(channels, channels, kernel_size=3, padding=4, dilation=4),
+            nn.ReLU(inplace=True)
+        )
+
+        self.fuse = nn.Sequential(
+            nn.Conv2d(channels * 3, channels, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        residual = x
+
+        x = self.pre(x)
+        p1 = self.path1(x)
+        p2 = self.path2(x)
+        p3 = self.path3(x)
+
+        x = torch.cat([p1, p2, p3], dim=1)
+        x = self.fuse(x)
+
+        return x + residual
+
+
+# =========================================================
+# CRM
+# =========================================================
+
+class CRM(nn.Module):
+    """
+    Context Channel-wise Recalibration Module
+
+    - concat feature corrente con input multi-image iniziale
+    - channel attention stile squeeze-excitation
+    - conv di fusione finale
+    """
+    def __init__(self, feat_channels: int, input_channels: int, reduction: int = 8):
+        super().__init__()
+        self.total_channels = feat_channels + input_channels
+
+        hidden = max(self.total_channels // reduction, 8)
+
+        self.fuse = nn.Sequential(
+            nn.Conv2d(self.total_channels, feat_channels, kernel_size=1),
+            nn.ReLU(inplace=True)
+        )
+
+        self.fc1 = nn.Linear(self.total_channels, hidden)
+        self.fc2 = nn.Linear(hidden, self.total_channels)
+
+    def forward(self, feat: torch.Tensor, init_input: torch.Tensor) -> torch.Tensor:
+        """
+        feat:       [B, C_feat, H, W]
+        init_input: [B, C_in,   H, W]
+        """
+        x = torch.cat([feat, init_input], dim=1)   # [B, C_feat + C_in, H, W]
+
+        # channel attention
+        w = F.adaptive_avg_pool2d(x, 1).flatten(1)      # [B, C]
+        w = F.relu(self.fc1(w), inplace=True)
+        w = torch.sigmoid(self.fc2(w)).view(x.shape[0], x.shape[1], 1, 1)
+
+        x = x * w
+        x = self.fuse(x)
+
+        return x
+
+
+# =========================================================
+# MECM
+# =========================================================
+
+class MECM(nn.Module):
+    """
+    Multi-path Enhanced Calibration Module
+    = MDPM + CRM
+    """
+    def __init__(self, feat_channels: int, input_channels: int):
+        super().__init__()
+        self.mdpm = MDPM(feat_channels)
+        self.crm = CRM(feat_channels, input_channels)
+
+    def forward(self, feat: torch.Tensor, init_input: torch.Tensor) -> torch.Tensor:
+        feat = self.mdpm(feat)
+        feat = self.crm(feat, init_input)
+        return feat
+
+
+# =========================================================
+# SRNet
+# =========================================================
+
+class SRNet(nn.Module):
+    """
+    Deep spectral reconstruction backbone
+    composto da 5 MECM
+    """
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int = 31,
+        feat_channels: int = 64,
+        num_mecm: int = 5
+    ):
+        super().__init__()
+
+        self.head = nn.Sequential(
+            nn.Conv2d(in_channels, feat_channels, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True)
+        )
+
+        self.blocks = nn.ModuleList([
+            MECM(feat_channels=feat_channels, input_channels=in_channels)
+            for _ in range(num_mecm)
+        ])
+
+        self.tail = nn.Conv2d(feat_channels, out_channels, kernel_size=3, padding=1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        init_input = x
+        feat = self.head(x)
+
+        for blk in self.blocks:
+            feat = blk(feat, init_input)
+
+        out = self.tail(feat)
+        return out
+
 
 class SpectralMLP(nn.Module):
     """
@@ -176,7 +335,7 @@ class JointNetwork(pl.LightningModule):
 
         self.ill_optimizer = IlluminantOptimizerL(num_illuminants=self.n_ill, led_path=self.led_path)
         if model_type == 1:
-            self.net = SpectralMLP(in_dim=self.in_dim)  # poi clamp nella loss
+            self.net = SRNet(in_channels=self.in_dim)  # poi clamp nella loss
 
     def forward(self, x):
         # 1. Obtain Illuminants SPD

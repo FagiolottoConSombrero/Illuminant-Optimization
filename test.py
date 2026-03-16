@@ -8,7 +8,7 @@ def main():
     # --------------------------------------------------
     # paths
     # --------------------------------------------------
-    checkpoint_path = "/Users/kolyszko/Scrivania/run_3_new_loss/jointnet-epoch=265-val_loss=17053.6895.ckpt"
+    checkpoint_path = "/Users/kolyszko/Scrivania/run_4_new_loss_1000_epochs/jointnet-epoch=20-val_loss=12877.8994.ckpt"
     led_path = "/Users/kolyszko/Documents/MATLAB/Thouslite5.mat"
     camera_path = "/Users/kolyszko/Documents/NIKON-D810.csv"
 
@@ -34,7 +34,7 @@ def main():
     # --------------------------------------------------
     led_library = model.ill_optimizer.led_library   # [15,20,301]
 
-    logits = model.ill_optimizer.logits             # [2,15,20]
+    _, logits = model.ill_optimizer(return_logits=True)                    # [2,15,20]
 
     # --------------------------------------------------
     # hard choice
