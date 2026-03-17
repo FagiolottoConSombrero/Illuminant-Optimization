@@ -19,7 +19,7 @@ def main():
         checkpoint_path,
         lr=1e-3,
         patience=50,
-        model_type=1,
+        model_type=2,
         n_ill=2,
         in_dim=6,
         lambda_ang=0.2,
@@ -84,7 +84,7 @@ def main():
 
     plt.xlabel("Wavelength (nm)")
     plt.ylabel("Power")
-    plt.title("Optimized HARD illuminants diff loss")
+    plt.title("Optimized HARD illuminants best")
     plt.grid(True)
     plt.legend()
     plt.tight_layout()

@@ -336,6 +336,8 @@ class JointNetwork(pl.LightningModule):
         self.ill_optimizer = IlluminantOptimizerL(num_illuminants=self.n_ill, led_path=self.led_path)
         if model_type == 1:
             self.net = SRNet(in_channels=self.in_dim)  # poi clamp nella loss
+        elif model_type == 2:
+            self.net = SpectralMLP(in_dim=self.in_dim)
 
     def forward(self, x):
         # 1. Obtain Illuminants SPD
@@ -343,12 +345,12 @@ class JointNetwork(pl.LightningModule):
         # 2.. Generate RGB Images
         rgb1, rgb2 = render_rgb(x, ills, self.camera_spd_path)
         in_rgb = torch.cat((rgb1, rgb2), dim=1)
-        return self.net(in_rgb), ills
+        return self.net(in_rgb), ills, rgb1, rgb2
 
     def step(self, batch, stage):
         ref = batch  # [B,31,H,W]
 
-        recon, ills = self(ref)
+        recon, ills, rgb1, rgb2 = self(ref)
 
         # reconstruction loss
         loss_rec = reconstruction_loss(recon, ref)
@@ -356,13 +358,12 @@ class JointNetwork(pl.LightningModule):
         # illuminant regularization
         loss_illum, _ = illumination_spec_regularization(ills)
 
-        loss = loss_rec + loss_illum
+        # img regularization
+        loss_img, _ = illumination_img_regularization(rgb1, rgb2)
 
-        # metric
-        mrae_val = mrae(recon, ref)
+        loss = loss_rec + loss_illum + loss_img
 
         self.log(f"{stage}_loss", loss, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
-        self.log(f"{stage}_mrae", mrae_val, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
 
         return loss
 

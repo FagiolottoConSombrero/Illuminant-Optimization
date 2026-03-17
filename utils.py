@@ -184,6 +184,150 @@ def illumination_spec_regularization(illuminants, tau=0.15, eps=1e-6):
     }
 
 
+def rgb_to_xyz(rgb):
+    """
+    rgb: [B,3,H,W] in range arbitrario non negativo
+
+    Conversione lineare RGB -> XYZ.
+    Assumiamo RGB linearizzato.
+    """
+    if rgb.shape[1] != 3:
+        raise ValueError(f"Mi aspetto rgb con 3 canali, ma ho shape {tuple(rgb.shape)}")
+
+    # matrice standard sRGB linear -> XYZ (D65)
+    M = rgb.new_tensor([
+        [0.4124564, 0.3575761, 0.1804375],
+        [0.2126729, 0.7151522, 0.0721750],
+        [0.0193339, 0.1191920, 0.9503041],
+    ])  # [3,3]
+
+    B, C, H, W = rgb.shape
+    x = rgb.permute(0, 2, 3, 1).contiguous()   # [B,H,W,3]
+    xyz = torch.matmul(x, M.t())               # [B,H,W,3]
+    xyz = xyz.permute(0, 3, 1, 2).contiguous() # [B,3,H,W]
+
+    return xyz
+
+
+def xyz_to_lab(xyz, eps=1e-6):
+    """
+    xyz: [B,3,H,W]
+    output: lab [B,3,H,W]
+
+    White point D65
+    """
+    if xyz.shape[1] != 3:
+        raise ValueError(f"Mi aspetto xyz con 3 canali, ma ho shape {tuple(xyz.shape)}")
+
+    # white point D65
+    white = xyz.new_tensor([0.95047, 1.00000, 1.08883]).view(1, 3, 1, 1)
+
+    xyz_n = xyz / (white + eps)
+
+    delta = 6 / 29
+    delta3 = delta ** 3
+    factor = 1 / (3 * delta ** 2)
+    offset = 4 / 29
+
+    def f(t):
+        return torch.where(t > delta3, torch.pow(t.clamp_min(eps), 1/3), factor * t + offset)
+
+    fx = f(xyz_n[:, 0:1])
+    fy = f(xyz_n[:, 1:2])
+    fz = f(xyz_n[:, 2:3])
+
+    L = 116 * fy - 16
+    a = 500 * (fx - fy)
+    b = 200 * (fy - fz)
+
+    lab = torch.cat([L, a, b], dim=1)
+    return lab
+
+
+def rgb_to_lab(rgb, eps=1e-6):
+    """
+    rgb: [B,3,H,W]
+    """
+    xyz = rgb_to_xyz(rgb)
+    lab = xyz_to_lab(xyz, eps=eps)
+    return lab
+
+
+def pixel_response_difference_loss(rgb1, rgb2, eps=1e-6):
+    """
+    Lpix del paper:
+    incoraggia differenze pixel-wise tra le due immagini RGB.
+
+    rgb1, rgb2: [B,3,H,W]
+
+    Loss da minimizzare:
+        mean( 1 / (|rgb1-rgb2| + eps) )
+    """
+    diff = torch.abs(rgb1 - rgb2)
+    loss = torch.mean(1.0 / (diff + eps))
+    return loss
+
+
+def perceptual_color_difference_loss(rgb1, rgb2, eps=1e-6):
+    """
+    Lcolor del paper:
+    differenza percettiva nello spazio Lab.
+
+    rgb1, rgb2: [B,3,H,W]
+
+    Loss da minimizzare:
+        mean( 1 / (|Lab(rgb1)-Lab(rgb2)| + eps) )
+    """
+    lab1 = rgb_to_lab(rgb1, eps=eps)
+    lab2 = rgb_to_lab(rgb2, eps=eps)
+
+    diff = torch.abs(lab1 - lab2)
+    loss = torch.mean(1.0 / (diff + eps))
+    return loss
+
+
+def chromaticity_difference_loss(rgb1, rgb2, eps=1e-6):
+    """
+    Lchrom del paper:
+    differenza di cromaticità dopo rimozione della luminanza.
+
+    rgb1, rgb2: [B,3,H,W]
+
+    chrom(rgb) = rgb / sum_c rgb_c
+
+    Loss da minimizzare:
+        mean( 1 / (|chrom1-chrom2| + eps) )
+    """
+    sum1 = rgb1.sum(dim=1, keepdim=True)
+    sum2 = rgb2.sum(dim=1, keepdim=True)
+
+    chrom1 = rgb1 / (sum1 + eps)
+    chrom2 = rgb2 / (sum2 + eps)
+
+    diff = torch.abs(chrom1 - chrom2)
+    loss = torch.mean(1.0 / (diff + eps))
+    return loss
+
+
+def illumination_img_regularization(rgb1, rgb2, eps=1e-6):
+    """
+    Lillum-img = Lpix + Lcolor + Lchrom
+
+    rgb1, rgb2: [B,3,H,W]
+    """
+    l_pix = pixel_response_difference_loss(rgb1, rgb2, eps=eps)
+    l_color = perceptual_color_difference_loss(rgb1, rgb2, eps=eps)
+    l_chrom = chromaticity_difference_loss(rgb1, rgb2, eps=eps)
+
+    loss = l_pix + l_color + l_chrom
+
+    return loss, {
+        "illum_pix": l_pix.detach(),
+        "illum_color": l_color.detach(),
+        "illum_chrom": l_chrom.detach(),
+    }
+
+
 def mrae(pred, target, eps=1e-8):
     """
     Mean Relative Absolute Error

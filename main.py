@@ -11,7 +11,7 @@ def main():
     data_dir = "/home/acp/datasets/SSD1/31bands_h5"
     led_path = "/home/acp/Documenti/Thouslite5.mat"
     camera_path = "/home/acp/Documenti/NIKON-D810.csv"
-    checkpoint_dir = "./run_7_new_model_500_epochs"
+    checkpoint_dir = "./run_8_final_loss_model_2"
 
     os.makedirs(checkpoint_dir, exist_ok=True)
 
@@ -66,7 +66,7 @@ def main():
     model = JointNetwork(
         lr=1e-3,
         patience=30,
-        model_type=1,
+        model_type=2,
         n_ill=2,
         in_dim=6,                # 2 illuminanti -> 2 RGB -> 6 canali
         lambda_ang=0.2,
