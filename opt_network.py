@@ -422,9 +422,7 @@ class IllNetwork(pl.LightningModule):
 
         loss = loss_illum + loss_img
 
-        self.log(f"{stage}_loss_ill", loss_illum, on_epoch=False, prog_bar=False, batch_size=ref.size(0))
-        self.log(f"{stage}_loss_img", loss_img, on_epoch=False, prog_bar=False, batch_size=ref.size(0))
-        self.log(f"{stage}_loss", loss, on_epoch=False, prog_bar=True, batch_size=ref.size(0))
+        self.log(f"{stage}_loss", loss, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
 
         return loss
 
