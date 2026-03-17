@@ -66,8 +66,8 @@ class IlluminantOptimizerL(nn.Module):
         self,
         num_illuminants=2,
         led_path="",
-        latent_dim=128,
-        hidden_dim=256,
+        latent_dim=64,
+        hidden_dim=128,
         temperature=1.0
     ):
         super().__init__()
