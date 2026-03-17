@@ -390,4 +390,58 @@ def reconstruction_loss(pred, target):
     return F.l1_loss(pred, target)
 
 
+class IllNetwork(pl.LightningModule):
+    def __init__(self, lr=1e-3, patience=50, n_ill=2, led_path='', camera_spd_path=''):
+        super().__init__()
+        self.save_hyperparameters()
+        self.lr = lr
+        self.n_ill = n_ill
+        self.patience = patience
+        self.led_path = led_path
+        self.camera_spd_path = camera_spd_path
 
+        self.ill_optimizer = IlluminantOptimizerL(num_illuminants=self.n_ill, led_path=self.led_path)
+
+    def forward(self, x):
+        # 1. Obtain Illuminants SPD
+        ills = self.ill_optimizer()
+        # 2.. Generate RGB Images
+        rgb1, rgb2 = render_rgb(x, ills, self.camera_spd_path)
+        return ills, rgb1, rgb2
+
+    def step(self, batch, stage):
+        ref = batch  # [B,31,H,W]
+
+        ills, rgb1, rgb2 = self(ref)
+
+        # illuminant regularization
+        loss_illum, _ = illumination_spec_regularization(ills)
+
+        # img regularization
+        loss_img, _ = illumination_img_regularization(rgb1, rgb2)
+
+        loss = loss_illum + loss_img
+
+        self.log(f"{stage}_loss_ill", loss_illum, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
+        self.log(f"{stage}_loss_img", loss_img, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
+        self.log(f"{stage}_loss", loss, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
+
+        return loss
+
+    def training_step(self, batch, batch_idx):
+        return self.step(batch, "train")
+
+    def validation_step(self, batch, batch_idx):
+        self.step(batch, "val")
+
+    def configure_optimizers(self):
+        opt = torch.optim.Adam(self.parameters(), lr=self.lr)
+        sched = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            opt, mode="min", factor=0.5, patience=self.patience
+        )
+        return {
+            "optimizer": opt,
+            "lr_scheduler": {
+                "scheduler": sched,
+                "monitor": "val_loss"
+            }}
