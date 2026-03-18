@@ -335,7 +335,6 @@ class JointNetwork(pl.LightningModule):
         self.camera_spd_path = camera_spd_path
         self.psnr_metric = PeakSignalNoiseRatio(data_range=1.0)
         self.sam_metric = SpectralAngleMapper()
-        self.ssim_metric = spectral_ssim(data_range=1.0)
 
         self.ill_optimizer = IlluminantOptimizerL(num_illuminants=self.n_ill, led_path=self.led_path)
         if model_type == 1:
@@ -388,7 +387,7 @@ class JointNetwork(pl.LightningModule):
 
             sam_val = self.sam_metric(recon_eval, ref_eval)
             psnr_val = self.psnr_metric(recon_eval, ref_eval)
-            ssim_val = self.ssim_metric(recon_eval, ref_eval)
+            ssim_val = spectral_ssim(recon_eval, ref_eval)
 
             self.log("val_ssim", sam_val, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
             self.log("val_psnr", psnr_val, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
