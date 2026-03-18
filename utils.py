@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import pandas as pd
 import scipy.io
-from torchmetrics.functional import peak_signal_noise_ratio, structural_similarity_index_measure
+from torchmetrics.functional import structural_similarity_index_measure
 
 
 

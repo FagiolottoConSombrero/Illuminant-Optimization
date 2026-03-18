@@ -2,6 +2,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 import pytorch_lightning as pl
 from utils import *
+from torchmetrics.image import PeakSignalNoiseRatio, SpectralAngleMapper
 
 
 class IlluminantOptimizer(nn.Module):
@@ -332,6 +333,9 @@ class JointNetwork(pl.LightningModule):
         self.lambda_ang = lambda_ang
         self.led_path = led_path
         self.camera_spd_path = camera_spd_path
+        self.psnr_metric = PeakSignalNoiseRatio(data_range=1.0)
+        self.sam_metric = SpectralAngleMapper()
+        self.ssim_metric = spectral_ssim(data_range=1.0)
 
         self.ill_optimizer = IlluminantOptimizerL(num_illuminants=self.n_ill, led_path=self.led_path)
         if model_type == 1:
@@ -382,9 +386,11 @@ class JointNetwork(pl.LightningModule):
             recon_eval = recon.clamp(0, 1)
             ref_eval = ref.clamp(0, 1)
 
-            psnr_val = peak_signal_noise_ratio(recon_eval, ref_eval, data_range=1.0)
-            ssim_val = spectral_ssim(recon_eval, ref_eval, data_range=1.0)
+            sam_val = self.sam_metric(recon_eval, ref_eval)
+            psnr_val = self.psnr_metric(recon_eval, ref_eval)
+            ssim_val = self.ssim_metric(recon_eval, ref_eval)
 
+            self.log("val_ssim", sam_val, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
             self.log("val_psnr", psnr_val, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
             self.log("val_ssim", ssim_val, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
 
@@ -392,6 +398,7 @@ class JointNetwork(pl.LightningModule):
             if batch_idx == 0:
                 print(
                     f"[Epoch {self.current_epoch}] "
+                    f"val_sam={sam_val.item():.4f}, "
                     f"val_psnr={psnr_val.item():.4f}, "
                     f"val_ssim={ssim_val.item():.4f}"
                 )
