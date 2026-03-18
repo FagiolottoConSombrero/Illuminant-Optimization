@@ -363,7 +363,7 @@ class JointNetwork(pl.LightningModule):
 
         loss = loss_rec + loss_illum + loss_img
 
-        #self.log(f"{stage}_loss", loss, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
+        self.log(f"{stage}_loss", loss, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
         self.log(f"{stage}_loss_rec", loss_rec, on_epoch=True, prog_bar=False, batch_size=ref.size(0))
         self.log(f"{stage}_loss_rec", loss_illum, on_epoch=True, prog_bar=False, batch_size=ref.size(0))
         self.log(f"{stage}_loss_rec", loss_img, on_epoch=True, prog_bar=False, batch_size=ref.size(0))
