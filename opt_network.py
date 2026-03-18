@@ -389,7 +389,7 @@ class JointNetwork(pl.LightningModule):
             psnr_val = self.psnr_metric(recon_eval, ref_eval)
             ssim_val = spectral_ssim(recon_eval, ref_eval)
 
-            self.log("val_ssim", sam_val, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
+            self.log("val_sam", sam_val, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
             self.log("val_psnr", psnr_val, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
             self.log("val_ssim", ssim_val, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
 
