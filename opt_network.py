@@ -361,20 +361,42 @@ class JointNetwork(pl.LightningModule):
         # img regularization
         loss_img, _ = illumination_img_regularization(rgb1, rgb2)
 
-        loss = loss_rec + loss_illum + loss_img
+        w_illum = 3e-7
+        w_img = 1e-5
+
+        loss = loss_rec + w_illum * loss_illum + w_img * loss_img
 
         self.log(f"{stage}_loss", loss, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
-        self.log(f"{stage}_loss_rec", loss_rec, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
-        self.log(f"{stage}_loss_illum", loss_illum, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
-        self.log(f"{stage}_loss_img", loss_img, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
 
-        return loss
+        return loss, recon, ref
 
     def training_step(self, batch, batch_idx):
-        return self.step(batch, "train")
+        loss, _, _ = self.step(batch, "train")
+        return loss
 
     def validation_step(self, batch, batch_idx):
-        self.step(batch, "val")
+        loss, recon, ref = self.step(batch, "val")
+
+        # ogni 10 epoch calcola PSNR e SSIM
+        if self.current_epoch % 10 == 0:
+            recon_eval = recon.clamp(0, 1)
+            ref_eval = ref.clamp(0, 1)
+
+            psnr_val = peak_signal_noise_ratio(recon_eval, ref_eval, data_range=1.0)
+            ssim_val = spectral_ssim(recon_eval, ref_eval, data_range=1.0)
+
+            self.log("val_psnr", psnr_val, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
+            self.log("val_ssim", ssim_val, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
+
+            # stampa solo una volta per epoch
+            if batch_idx == 0:
+                print(
+                    f"[Epoch {self.current_epoch}] "
+                    f"val_psnr={psnr_val.item():.4f}, "
+                    f"val_ssim={ssim_val.item():.4f}"
+                )
+
+        return loss
 
     def configure_optimizers(self):
         opt = torch.optim.Adam(self.parameters(), lr=self.lr)

@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import pandas as pd
 import scipy.io
+from torchmetrics.functional import peak_signal_noise_ratio, structural_similarity_index_measure
 
 
 
@@ -328,12 +329,19 @@ def illumination_img_regularization(rgb1, rgb2, eps=1e-6):
     }
 
 
-def mrae(pred, target, eps=1e-8):
+def spectral_ssim(recon, ref, data_range=1.0):
     """
-    Mean Relative Absolute Error
-
-    pred   : [B,C,H,W]
-    target : [B,C,H,W]
+    SSIM medio banda per banda.
+    recon, ref: [B, C, H, W]
     """
-    return torch.mean(torch.abs(pred - target) / (target + eps))
+    vals = []
+    for c in range(recon.shape[1]):
+        vals.append(
+            structural_similarity_index_measure(
+                recon[:, c:c + 1],
+                ref[:, c:c + 1],
+                data_range=data_range
+            )
+        )
+    return torch.stack(vals).mean()
 
