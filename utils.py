@@ -2,8 +2,7 @@ import torch
 import numpy as np
 import pandas as pd
 import scipy.io
-from torchmetrics.functional import structural_similarity_index_measure
-
+from torchmetrics.image import StructuralSimilarityIndexMeasure
 
 
 def load_led_library(mat_path, device="cpu", dtype=torch.float32):
@@ -337,7 +336,7 @@ def spectral_ssim(recon, ref, data_range=1.0):
     vals = []
     for c in range(recon.shape[1]):
         vals.append(
-            structural_similarity_index_measure(
+            StructuralSimilarityIndexMeasure(
                 recon[:, c:c + 1],
                 ref[:, c:c + 1],
                 data_range=data_range
