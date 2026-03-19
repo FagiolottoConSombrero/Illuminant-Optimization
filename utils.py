@@ -333,14 +333,12 @@ def spectral_ssim(recon, ref, data_range=1.0):
     SSIM medio banda per banda.
     recon, ref: [B, C, H, W]
     """
+    metric = StructuralSimilarityIndexMeasure(data_range=data_range).to(recon.device)
+
     vals = []
     for c in range(recon.shape[1]):
-        vals.append(
-            StructuralSimilarityIndexMeasure(
-                recon[:, c:c + 1],
-                ref[:, c:c + 1],
-                data_range=data_range
-            )
-        )
+        ssim_c = metric(recon[:, c:c+1], ref[:, c:c+1])
+        vals.append(ssim_c)
+
     return torch.stack(vals).mean()
 
