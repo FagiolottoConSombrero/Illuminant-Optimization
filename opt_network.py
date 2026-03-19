@@ -364,7 +364,7 @@ class JointNetwork(pl.LightningModule):
         # img regularization
         loss_img, _ = illumination_img_regularization(rgb1, rgb2)
 
-        w_illum = 3e-7
+        w_illum = 3e-6
         w_img = 1e-5
 
         loss = loss_rec + w_illum * loss_illum + w_img * loss_img

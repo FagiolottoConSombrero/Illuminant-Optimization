@@ -76,11 +76,12 @@ def render_rgb(reflectance, illuminants, camera_sens="/Users/kolyszko/Documents/
     return:
         rgb_multi   : [B, K, 3, H, W]
     """
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     camera_spd = load_camera_SPD(camera_sens)
     illuminants = illuminants[:, ::10]  # ill[K, 301] ---> ill[K, 31]
     # risposta spettrale combinata: [K, 3, 31]
-    illuminants = illuminants.to(device='cuda', dtype=reflectance.dtype)
-    camera_spd = camera_spd.to(device='cuda', dtype=reflectance.dtype)
+    illuminants = illuminants.to(device=device, dtype=reflectance.dtype)
+    camera_spd = camera_spd.to(device=device, dtype=reflectance.dtype)
     response = illuminants[:, None, :] * camera_spd[None, :, :]
 
     # somma spettrale

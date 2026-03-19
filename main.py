@@ -66,7 +66,7 @@ def main():
     model = JointNetwork(
         lr=1e-4,
         patience=30,
-        model_type=1,
+        model_type=2,
         n_ill=2,
         in_dim=6,                # 2 illuminanti -> 2 RGB -> 6 canali
         lambda_ang=0.2,

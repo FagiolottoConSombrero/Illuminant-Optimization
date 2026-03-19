@@ -8,18 +8,21 @@ def main():
     # --------------------------------------------------
     # paths
     # --------------------------------------------------
-    checkpoint_path = "/Users/kolyszko/Scrivania/run_8_final_loss_model_2/illnet-epoch=14-val_loss=23040.28.ckpt"
+    checkpoint_path = "/Users/kolyszko/Scrivania/run_10_model_big/jointnet-epoch=04-val_loss=0.1187.ckpt"
     led_path = "/Users/kolyszko/Documents/MATLAB/Thouslite5.mat"
     camera_path = "/Users/kolyszko/Documents/NIKON-D810.csv"
 
     # --------------------------------------------------
     # load model
     # --------------------------------------------------
-    model = IllNetwork.load_from_checkpoint(
+    model = JointNetwork.load_from_checkpoint(
         checkpoint_path,
         lr=1e-3,
+        model_type=1,
         patience=50,
         n_ill=2,
+        in_dim=6,  # 2 illuminanti -> 2 RGB -> 6 canali
+        lambda_ang=0.2,
         led_path=led_path,
         camera_spd_path=camera_path
     )
