@@ -44,7 +44,7 @@ def main():
     # --------------------------------------------------
     train_loader = DataLoader(
         train_dataset,
-        batch_size=2,
+        batch_size=1,
         shuffle=True,
         num_workers=7,
         pin_memory=torch.cuda.is_available(),
@@ -53,7 +53,7 @@ def main():
 
     val_loader = DataLoader(
         val_dataset,
-        batch_size=2,
+        batch_size=1,
         shuffle=False,
         num_workers=7,
         pin_memory=torch.cuda.is_available(),
