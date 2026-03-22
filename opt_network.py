@@ -750,7 +750,7 @@ class MST(nn.Module):
 
 
 class MST_Plus_Plus(nn.Module):
-    def __init__(self, in_channels=8, out_channels=121, n_feat=31, stage=3):
+    def __init__(self, in_channels=6, out_channels=31, n_feat=31, stage=3):
         super(MST_Plus_Plus, self).__init__()
         self.stage = stage
         self.n_feat = n_feat
