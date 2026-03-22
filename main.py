@@ -1,4 +1,4 @@
-from torch.utils.data import random_split
+from sklearn.model_selection import train_test_split
 from dataset import *
 from opt_network import *
 from utils import *
@@ -11,7 +11,7 @@ def main():
     data_dir = "/home/acp/datasets/SSD1/31bands_h5"
     led_path = "/home/acp/Documenti/Thouslite5.mat"
     camera_path = "/home/acp/Documenti/NIKON-D810.csv"
-    checkpoint_dir = "./run_11_final"
+    checkpoint_dir = "./run_12_random_crop"
 
     os.makedirs(checkpoint_dir, exist_ok=True)
 
@@ -23,18 +23,33 @@ def main():
     # --------------------------------------------------
     # 3. dataset
     # --------------------------------------------------
-    full_dataset = H5ReflectanceDataset(folder_path=data_dir,dtype=torch.float32)
+    all_files = sorted(glob.glob(os.path.join(data_dir, "*.h5")))
 
-    print(f"Numero file trovati: {len(full_dataset)}")
+    if len(all_files) == 0:
+        raise FileNotFoundError(f"Nessun file .h5 trovato in: {data_dir}")
 
-    # split train / val
-    n_total = len(full_dataset)
-    n_train = int(0.9 * n_total)
-    n_val = n_total - n_train
+    print(f"Numero file trovati: {len(all_files)}")
 
-    train_dataset, val_dataset = random_split(full_dataset,
-                                              [n_train, n_val],
-                                              generator=torch.Generator().manual_seed(42))
+    # split train / val a livello di file
+    train_files, val_files = train_test_split(
+        all_files,
+        test_size=0.1,
+        random_state=42
+    )
+
+    train_dataset = H5ReflectanceDataset(
+        file_list=train_files,
+        dtype=torch.float32,
+        crop_size=128,
+        random_crop=True
+    )
+
+    val_dataset = H5ReflectanceDataset(
+        file_list=val_files,
+        dtype=torch.float32,
+        crop_size=None,
+        random_crop=False
+    )
 
     print(f"Train samples: {len(train_dataset)}")
     print(f"Val samples: {len(val_dataset)}")
@@ -44,7 +59,7 @@ def main():
     # --------------------------------------------------
     train_loader = DataLoader(
         train_dataset,
-        batch_size=1,
+        batch_size=4,
         shuffle=True,
         num_workers=7,
         pin_memory=torch.cuda.is_available(),
