@@ -10,8 +10,8 @@ def main():
     # --------------------------------------------------
     data_dir = "/home/acp/datasets/SSD1/31bands_h5"
     led_path = "/home/acp/Documenti/Thouslite5.mat"
-    camera_path = "/home/acp/Documenti/NIKON-D810.csv"
-    checkpoint_dir = "./run_12_random_crop"
+    camera_path = "/home/acp/Documenti/Sony-ILCE-6100.csv"
+    checkpoint_dir = "./run_13_sony"
 
     os.makedirs(checkpoint_dir, exist_ok=True)
 
