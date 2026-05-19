@@ -339,6 +339,7 @@ class JointNetwork(pl.LightningModule):
         self.camera_spd_path = camera_spd_path
         self.psnr_metric = PeakSignalNoiseRatio(data_range=1.0)
         self.sam_metric = SpectralAngleMapper()
+        self.ill_loss = IlluminationRegularizationLoss()
 
         self.ill_optimizer = IlluminantOptimizerL(num_illuminants=self.n_ill, led_path=self.led_path)
         if model_type == 1:
@@ -365,15 +366,10 @@ class JointNetwork(pl.LightningModule):
         loss_rec = reconstruction_loss(recon, ref)
 
         # illuminant regularization
-        loss_illum, _ = illumination_spec_regularization(ills)
+        loss_illum = self.ill_loss(ills, [rgb1, rgb2])
 
-        # img regularization
-        loss_img, _ = illumination_img_regularization(rgb1, rgb2)
 
-        w_illum = 3e-6
-        w_img = 1e-5
-
-        loss = loss_rec + w_illum * loss_illum + w_img * loss_img
+        loss = loss_rec + loss_illum
 
         self.log(f"{stage}_loss", loss, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
 
@@ -436,6 +432,7 @@ class IllNetwork(pl.LightningModule):
         self.patience = patience
         self.led_path = led_path
         self.camera_spd_path = camera_spd_path
+        self.ill_loss = IlluminationRegularizationLoss()
 
         self.ill_optimizer = IlluminantOptimizerL(num_illuminants=self.n_ill, led_path=self.led_path)
 
@@ -452,12 +449,8 @@ class IllNetwork(pl.LightningModule):
         ills, rgb1, rgb2 = self(ref)
 
         # illuminant regularization
-        loss_illum, _ = illumination_spec_regularization(ills)
+        loss_illum = self.ill_loss(ills, [rgb1, rgb2])
 
-        # img regularization
-        loss_img, _ = illumination_img_regularization(rgb1, rgb2)
-
-        loss = loss_illum + loss_img
 
         self.log(f"{stage}_loss", loss, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
 
