@@ -2,16 +2,35 @@ from sklearn.model_selection import train_test_split
 from dataset import *
 from opt_network import *
 from utils import *
+import argparse
 
 
-def main():
+parser = argparse.ArgumentParser('Set args', add_help=False)
+
+# paths
+parser.add_argument("--data_path", default="/home/acp/datasets/SSD1/31bands_h5", type=str, help="img data path")
+parser.add_argument("--led_path", default="/home/acp/Documenti/Thouslite5.mat", type=str, help="lightbooth data path")
+parser.add_argument("--camera_path", default="/home/acp/Documenti/NIKON-D810.csv", type=str, help="rgb sensor camera data path")
+parser.add_argument("--checkpoint_path", default="", type=str, help="save path")
+
+# optimization
+parser.add_argument("--lr", default=1e-4, type=float, help="base learning rate")
+parser.add_argument("--batch_size", default=4, type=int, help="batch size")
+parser.add_argument("--model", default=1, type=int, help="1: mlp ; 2: CNN ; 3: MST++")
+parser.add_argument("--patience", default=30, type=int, help="patience for early stopping")
+parser.add_argument("--epochs", default=1000, type=int, help="training epochs")
+
+
+
+def main(args):
+    args = parser.parse_args()
     # --------------------------------------------------
     # 1. paths
     # --------------------------------------------------
-    data_dir = "/home/acp/datasets/SSD1/31bands_h5"
-    led_path = "/home/acp/Documenti/Thouslite5.mat"
-    camera_path = "/home/acp/Documenti/NIKON-D810.csv"
-    checkpoint_dir = "./run_15_new_ill_nikon"
+    data_dir = args.data_path
+    led_path = args.led_path
+    camera_path = args.camera_path
+    checkpoint_dir = args.checkpoint_path
 
     os.makedirs(checkpoint_dir, exist_ok=True)
 
@@ -59,7 +78,7 @@ def main():
     # --------------------------------------------------
     train_loader = DataLoader(
         train_dataset,
-        batch_size=4,
+        batch_size=args.batch_size,
         shuffle=True,
         num_workers=7,
         pin_memory=torch.cuda.is_available(),
@@ -79,9 +98,9 @@ def main():
     # 5. model
     # --------------------------------------------------
     model = JointNetwork(
-        lr=1e-4,
-        patience=30,
-        model_type=3,
+        lr=args.lr,
+        patience=args.patience,
+        model_type=args.model,
         n_ill=2,
         in_dim=6,                # 2 illuminanti -> 2 RGB -> 6 canali
         lambda_ang=0.2,
@@ -113,7 +132,7 @@ def main():
     # 7. trainer
     # --------------------------------------------------
     trainer = pl.Trainer(
-        max_epochs=1000,
+        max_epochs=args.epochs,
         accelerator="auto",
         devices=1,
         precision=32,
