@@ -22,7 +22,7 @@ parser.add_argument("--epochs", default=1000, type=int, help="training epochs")
 
 
 
-def main(args):
+def main():
     args = parser.parse_args()
     # --------------------------------------------------
     # 1. paths
