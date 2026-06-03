@@ -2,6 +2,7 @@ from sklearn.model_selection import train_test_split
 from dataset import *
 from opt_network import *
 from utils import *
+from dataset_patch import *
 import argparse
 
 
@@ -12,6 +13,7 @@ parser.add_argument("--data_path", default="/home/acp/datasets/SSD1/31bands_h5",
 parser.add_argument("--led_path", default="/home/acp/Documenti/Thouslite5.mat", type=str, help="lightbooth data path")
 parser.add_argument("--camera_path", default="/home/acp/Documenti/NIKON-D810.csv", type=str, help="rgb sensor camera data path")
 parser.add_argument("--checkpoint_path", default="", type=str, help="save path")
+parser.add_argument("--patches", default=False, type=bool, help="True: read aggregated patch H5; False: read folder of H5 files")
 
 # optimization
 parser.add_argument("--lr", default=1e-4, type=float, help="base learning rate")
@@ -39,36 +41,87 @@ def main():
     # --------------------------------------------------
     pl.seed_everything(42, workers=True)
 
-    # --------------------------------------------------
+      # --------------------------------------------------
     # 3. dataset
     # --------------------------------------------------
-    all_files = sorted(glob.glob(os.path.join(data_dir, "*.h5")))
 
-    if len(all_files) == 0:
-        raise FileNotFoundError(f"Nessun file .h5 trovato in: {data_dir}")
+    if args.patches is False:
+        # ==================================================
+        # Original dataset: folder with many .h5 files
+        # ==================================================
 
-    print(f"Numero file trovati: {len(all_files)}")
+        all_files = sorted(glob.glob(os.path.join(data_dir, "*.h5")))
 
-    # split train / val a livello di file
-    train_files, val_files = train_test_split(
-        all_files,
-        test_size=0.1,
-        random_state=42
-    )
+        if len(all_files) == 0:
+            raise FileNotFoundError(f"Nessun file .h5 trovato in: {data_dir}")
 
-    train_dataset = H5ReflectanceDataset(
-        file_list=train_files,
-        dtype=torch.float32,
-        crop_size=128,
-        random_crop=True
-    )
+        print("Dataset mode: original H5 files")
+        print(f"Numero file trovati: {len(all_files)}")
 
-    val_dataset = H5ReflectanceDataset(
-        file_list=val_files,
-        dtype=torch.float32,
-        crop_size=None,
-        random_crop=False
-    )
+        train_files, val_files = train_test_split(
+            all_files,
+            test_size=0.1,
+            random_state=42
+        )
+
+        train_dataset = H5ReflectanceDataset(
+            file_list=train_files,
+            dtype=torch.float32,
+            crop_size=128,
+            random_crop=True
+        )
+
+        val_dataset = H5ReflectanceDataset(
+            file_list=val_files,
+            dtype=torch.float32,
+            crop_size=None,
+            random_crop=False
+        )
+
+        train_batch_size = args.batch_size
+        val_batch_size = 1
+
+    else:
+        # ==================================================
+        # Patch dataset: single aggregated H5
+        # Expected:
+        #   /x         -> N x 31 x H x W
+        #   /source_id -> N
+        # ==================================================
+
+        if not os.path.isfile(data_dir):
+            raise FileNotFoundError(
+                f"Con --patches True, data_path deve essere un file H5. Ricevuto: {data_dir}"
+            )
+
+        print("Dataset mode: aggregated patches H5")
+        print(f"Patch dataset: {data_dir}")
+
+        split = split_by_source_id_reconstruction(
+            h5_path=data_dir,
+            train_ratio=0.9,
+            val_ratio=0.1,
+            test_ratio=0.0,
+            seed=42
+        )
+
+        train_dataset = H5PatchReconstructionDataset(
+            h5_path=data_dir,
+            indices=split["train_idx"],
+            dtype=torch.float32
+        )
+
+        val_dataset = H5PatchReconstructionDataset(
+            h5_path=data_dir,
+            indices=split["val_idx"],
+            dtype=torch.float32
+        )
+
+        train_batch_size = args.batch_size
+        val_batch_size = args.batch_size
+
+        print(f"Train source images: {len(split['train_sources'])}")
+        print(f"Val source images:   {len(split['val_sources'])}")
 
     print(f"Train samples: {len(train_dataset)}")
     print(f"Val samples: {len(val_dataset)}")
@@ -76,9 +129,10 @@ def main():
     # --------------------------------------------------
     # 4. dataloaders
     # --------------------------------------------------
+
     train_loader = DataLoader(
         train_dataset,
-        batch_size=args.batch_size,
+        batch_size=train_batch_size,
         shuffle=True,
         num_workers=7,
         pin_memory=torch.cuda.is_available(),
@@ -87,7 +141,7 @@ def main():
 
     val_loader = DataLoader(
         val_dataset,
-        batch_size=1,
+        batch_size=val_batch_size,
         shuffle=False,
         num_workers=7,
         pin_memory=torch.cuda.is_available(),
