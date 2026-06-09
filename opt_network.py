@@ -366,10 +366,16 @@ class JointNetwork(pl.LightningModule):
         loss_rec = reconstruction_loss(recon, ref)
 
         # illuminant regularization
-        loss_illum = self.ill_loss(ills, [rgb1, rgb2])
+        #loss_illum = self.ill_loss(ills, [rgb1, rgb2])
+        loss_illum, _ = illumination_spec_regularization(ills)
+        # img regularization
+        loss_img, _ = illumination_img_regularization(rgb1, rgb2)
+        w_illum = 3e-6
+        w_img = 1e-5
 
+        loss = loss_rec + w_illum * loss_illum + w_img * loss_img
 
-        loss = loss_rec + loss_illum
+        #loss = loss_rec + loss_illum
 
         self.log(f"{stage}_loss", loss, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
 
