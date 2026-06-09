@@ -157,7 +157,6 @@ def main():
         model = IllNetwork(
             lr=args.lr,
             patience=args.patience,
-            model_type=args.model,
             n_ill=2,               # 2 illuminanti -> 2 RGB -> 6 canali
             led_path=led_path,
             camera_spd_path=camera_path
