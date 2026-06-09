@@ -339,7 +339,7 @@ class JointNetwork(pl.LightningModule):
         self.camera_spd_path = camera_spd_path
         self.psnr_metric = PeakSignalNoiseRatio(data_range=1.0)
         self.sam_metric = SpectralAngleMapper()
-        self.ill_loss = IlluminationRegularizationLoss()
+        #self.ill_loss = IlluminationRegularizationLoss()
 
         self.ill_optimizer = IlluminantOptimizerL(num_illuminants=self.n_ill, led_path=self.led_path)
         if model_type == 1:
