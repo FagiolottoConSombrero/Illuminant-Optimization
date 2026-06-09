@@ -135,7 +135,7 @@ def spectral_ssim(recon, ref, data_range=1.0):
 
     return torch.stack(vals).mean()
 
-def illumination_diversity_loss(combined_illum_list):
+'''def illumination_diversity_loss(combined_illum_list):
     loss = 0.0
     num_pairs = 0
     for i in range(len(combined_illum_list)):
@@ -243,7 +243,7 @@ class IlluminationRegularizationLoss(nn.Module):
         loss += self.delta * illumination_render_difference_pixelwise_loss(rgb_out_list)
         loss += self.eta * illumination_render_difference_color_loss(rgb_out_list)
         loss += self.zeta * illumination_render_difference_chromaticity_loss(rgb_out_list)
-        return loss
+        return loss'''
     
 
 def illumination_trend_loss(illuminants, eps=1e-6):
