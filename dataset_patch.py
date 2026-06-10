@@ -2,6 +2,7 @@ import h5py
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
+from sklearn.model_selection import train_test_split
 
 
 class H5PatchReconstructionDataset(Dataset):
@@ -536,3 +537,120 @@ def print_split_class_distribution(h5_path, split, y_key="/y"):
 
         for c, n in zip(classes, counts):
             print(f"  class {c}: {n}")
+
+
+def read_labels_from_h5(h5_path, y_key="/y"):
+    with h5py.File(h5_path, "r") as f:
+        y = np.asarray(f[y_key])
+
+    y = np.squeeze(y)
+
+    if y.ndim == 1:
+        labels = y
+    elif y.ndim == 2:
+        labels = np.argmax(y, axis=1)
+    else:
+        raise ValueError(f"Shape label non supportata: {y.shape}")
+
+    return labels.astype(np.int64)
+
+
+def split_by_source_id_classification(
+    h5_path,
+    train_ratio=0.80,
+    val_ratio=0.20,
+    test_ratio=0.00,
+    seed=42,
+    y_key="/y",
+    source_key="/source_id",
+):
+    """
+    Split stratificato per classe a livello di source_id.
+
+    Ogni source_id finisce interamente in train/val/test.
+    La stratificazione viene fatta usando la label maggioritaria
+    associata a ogni source_id.
+    """
+
+    assert abs(train_ratio + val_ratio + test_ratio - 1.0) < 1e-6
+
+    with h5py.File(h5_path, "r") as f:
+        if source_key not in f:
+            raise KeyError(f"Dataset '{source_key}' non trovato.")
+
+        source_id = np.asarray(f[source_key]).squeeze()
+
+    y = read_labels_from_h5(h5_path, y_key=y_key)
+
+    if len(source_id) != len(y):
+        raise ValueError(
+            f"{source_key} e {y_key} devono avere stessa lunghezza. "
+            f"{len(source_id)} vs {len(y)}"
+        )
+
+    unique_sources = np.unique(source_id)
+
+    source_labels = []
+
+    for sid in unique_sources:
+        idx = np.where(source_id == sid)[0]
+        labels_sid = y[idx]
+
+        classes, counts = np.unique(labels_sid, return_counts=True)
+        majority_label = classes[np.argmax(counts)]
+
+        source_labels.append(majority_label)
+
+        if len(classes) > 1:
+            print(
+                f"Warning: source_id {sid} contiene più classi {classes}. "
+                f"Uso label maggioritaria {majority_label}."
+            )
+
+    source_labels = np.asarray(source_labels)
+
+    print("\nSource-level class distribution:")
+    for c in np.unique(source_labels):
+        print(f"  class {c}: {(source_labels == c).sum()} source")
+
+    temp_ratio = val_ratio + test_ratio
+
+    train_sources, temp_sources, train_y, temp_y = train_test_split(
+        unique_sources,
+        source_labels,
+        test_size=temp_ratio,
+        random_state=seed,
+        stratify=source_labels,
+    )
+
+    if test_ratio > 0:
+        relative_test_ratio = test_ratio / temp_ratio
+
+        val_sources, test_sources, _, _ = train_test_split(
+            temp_sources,
+            temp_y,
+            test_size=relative_test_ratio,
+            random_state=seed,
+            stratify=temp_y,
+        )
+    else:
+        val_sources = temp_sources
+        test_sources = np.array([], dtype=unique_sources.dtype)
+
+    train_idx = np.where(np.isin(source_id, train_sources))[0]
+    val_idx = np.where(np.isin(source_id, val_sources))[0]
+    test_idx = np.where(np.isin(source_id, test_sources))[0]
+
+    rng = np.random.default_rng(seed)
+    rng.shuffle(train_idx)
+    rng.shuffle(val_idx)
+    rng.shuffle(test_idx)
+
+    return {
+        "train_idx": train_idx,
+        "val_idx": val_idx,
+        "test_idx": test_idx,
+        "train_sources": train_sources,
+        "val_sources": val_sources,
+        "test_sources": test_sources,
+    }

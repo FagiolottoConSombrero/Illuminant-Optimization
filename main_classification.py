@@ -209,11 +209,13 @@ def main():
     # 4. split by source_id
     # --------------------------------------------------
     split = split_by_source_id_classification(
-        h5_path=h5_path,
-        train_ratio=args.train_ratio,
-        val_ratio=args.val_ratio,
-        test_ratio=args.test_ratio,
-        seed=args.seed
+    h5_path=h5_path,
+    train_ratio=args.train_ratio,
+    val_ratio=args.val_ratio,
+    test_ratio=args.test_ratio,
+    seed=args.seed,
+    y_key=args.y_key,
+    source_key="/source_id"
     )
 
     print_split_class_distribution(
