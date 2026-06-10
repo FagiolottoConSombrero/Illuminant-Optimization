@@ -216,6 +216,12 @@ def main():
         seed=args.seed
     )
 
+    print_split_class_distribution(
+    h5_path=h5_path,
+    split=split,
+    y_key=args.y_key
+    )
+
     train_dataset = H5PatchClassificationDataset(
         h5_path=h5_path,
         indices=split["train_idx"],
