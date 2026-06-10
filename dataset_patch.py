@@ -493,3 +493,46 @@ def split_by_source_id_classification(
     }
 
     return split
+
+import h5py
+import numpy as np
+
+
+def read_labels_from_h5(h5_path, y_key="/y"):
+    with h5py.File(h5_path, "r") as f:
+        y = np.asarray(f[y_key])
+
+    if y.ndim == 1:
+        labels = y
+
+    elif y.ndim == 2:
+        if y.shape[1] == 1:
+            labels = y[:, 0]
+        elif y.shape[0] == 1:
+            labels = y[0, :]
+        else:
+            labels = np.argmax(y, axis=1)
+
+    else:
+        raise ValueError(f"Shape label non supportata: {y.shape}")
+
+    return labels.astype(np.int64)
+
+
+def print_split_class_distribution(h5_path, split, y_key="/y"):
+    y = read_labels_from_h5(h5_path, y_key=y_key)
+
+    for name in ["train_idx", "val_idx", "test_idx"]:
+        idx = split[name]
+
+        if len(idx) == 0:
+            continue
+
+        labels = y[idx]
+        classes, counts = np.unique(labels, return_counts=True)
+
+        print(f"\n{name}:")
+        print(f"num samples: {len(idx)}")
+
+        for c, n in zip(classes, counts):
+            print(f"  class {c}: {n}")
