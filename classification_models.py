@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import pytorch_lightning as pl
 
 
 class ConvGNAct(nn.Module):
@@ -171,11 +172,7 @@ class HSITextureClassifier(nn.Module):
         x = self.forward_features(x)
         logits = self.classifier(x)
         return logits
-    
 
-import torch
-import torch.nn as nn
-import pytorch_lightning as pl
 
 
 class ClassificationNetwork(pl.LightningModule):

@@ -8,6 +8,7 @@ import pytorch_lightning as pl
 
 from dataset_patch import *
 from opt_network import *
+from classification_models import *
 
 
 def str2bool(v):
