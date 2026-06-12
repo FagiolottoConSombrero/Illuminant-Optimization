@@ -4,176 +4,65 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 
 
-class ConvGNAct(nn.Module):
-    def __init__(
-        self,
-        in_channels,
-        out_channels,
-        kernel_size=3,
-        stride=1,
-        padding=None,
-        groups=8,
-        act=True
-    ):
-        super().__init__()
-
-        if padding is None:
-            padding = kernel_size // 2
-
-        self.conv = nn.Conv2d(
-            in_channels,
-            out_channels,
-            kernel_size=kernel_size,
-            stride=stride,
-            padding=padding,
-            bias=False
-        )
-
-        num_groups = min(groups, out_channels)
-
-        while out_channels % num_groups != 0:
-            num_groups -= 1
-
-        self.norm = nn.GroupNorm(num_groups, out_channels)
-        self.act = nn.GELU() if act else nn.Identity()
-
-    def forward(self, x):
-        x = self.conv(x)
-        x = self.norm(x)
-        x = self.act(x)
-        return x
-
-
-class SpectralChannelAttention(nn.Module):
+class Patch64TinyClassifier(nn.Module):
     """
-    Channel attention sulle feature.
-    Utile perché le bande/feature spettrali non hanno tutte la stessa importanza.
-    """
-
-    def __init__(self, channels, reduction=8):
-        super().__init__()
-
-        hidden = max(channels // reduction, 4)
-
-        self.attn = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(channels, hidden, kernel_size=1),
-            nn.GELU(),
-            nn.Conv2d(hidden, channels, kernel_size=1),
-            nn.Sigmoid()
-        )
-
-    def forward(self, x):
-        w = self.attn(x)
-        return x * w
-
-
-class ResidualBlock(nn.Module):
-    def __init__(self, channels, expansion=1):
-        super().__init__()
-
-        hidden = channels * expansion
-
-        self.block = nn.Sequential(
-            ConvGNAct(channels, hidden, kernel_size=3),
-            ConvGNAct(hidden, channels, kernel_size=3, act=False),
-            SpectralChannelAttention(channels)
-        )
-
-    def forward(self, x):
-        return F.gelu(x + self.block(x))
-
-
-class HSITextureClassifier(nn.Module):
-    """
-    CNN 2D per classificazione di patch HSI.
+    Classificatore CNN minimale per patch HSI 64x64.
 
     Input:
-        x -> [B, C, H, W]
+        x: [B, C, 64, 64]
 
     Output:
-        logits -> [B, num_classes]
+        logits: [B, num_classes]
     """
 
     def __init__(
         self,
         in_channels=31,
-        num_classes=5,
-        width=64,
-        dropout=0.3
+        num_classes=15,
+        spectral_width=4,
+        spatial_width=8,
+        dropout=0.6
     ):
         super().__init__()
 
-        # Mixing spettrale iniziale: combina le bande HSI
-        self.spectral_projection = nn.Sequential(
-            ConvGNAct(
-                in_channels,
-                width,
-                kernel_size=1,
-                padding=0
+        self.model = nn.Sequential(
+            # Mixing spettrale molto compresso: 31 -> 4 feature
+            nn.Conv2d(in_channels, spectral_width, kernel_size=1, bias=False),
+            nn.GroupNorm(1, spectral_width),
+            nn.GELU(),
+
+            # Riduzione spaziale forte: 64x64 -> 16x16
+            nn.AvgPool2d(kernel_size=4),
+
+            # Convoluzione depthwise: poco costo, poco rischio overfitting
+            nn.Conv2d(
+                spectral_width,
+                spectral_width,
+                kernel_size=3,
+                padding=1,
+                groups=spectral_width,
+                bias=False
             ),
-            ConvGNAct(
-                width,
-                width,
-                kernel_size=3
-            )
-        )
+            nn.GroupNorm(1, spectral_width),
+            nn.GELU(),
 
-        self.stage1 = nn.Sequential(
-            ResidualBlock(width),
-            ResidualBlock(width)
-        )
+            # Piccolo mixing tra feature
+            nn.Conv2d(spectral_width, spatial_width, kernel_size=1, bias=False),
+            nn.GroupNorm(1, spatial_width),
+            nn.GELU(),
 
-        self.down1 = ConvGNAct(
-            width,
-            width * 2,
-            kernel_size=3,
-            stride=2
-        )
+            nn.Dropout2d(dropout),
 
-        self.stage2 = nn.Sequential(
-            ResidualBlock(width * 2),
-            ResidualBlock(width * 2)
-        )
-
-        self.down2 = ConvGNAct(
-            width * 2,
-            width * 4,
-            kernel_size=3,
-            stride=2
-        )
-
-        self.stage3 = nn.Sequential(
-            ResidualBlock(width * 4),
-            ResidualBlock(width * 4)
-        )
-
-        self.classifier = nn.Sequential(
+            # Descriptor globale della patch
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
+
             nn.Dropout(dropout),
-            nn.Linear(width * 4, num_classes)
+            nn.Linear(spatial_width, num_classes)
         )
 
-    def forward_features(self, x):
-        x = self.spectral_projection(x)
-
-        x = self.stage1(x)
-
-        x = self.down1(x)
-        x = self.stage2(x)
-
-        x = self.down2(x)
-        x = self.stage3(x)
-
-        return x
-
     def forward(self, x):
-        x = self.forward_features(x)
-        logits = self.classifier(x)
-        return logits
-
-
+        return self.model(x)
 
 class ClassificationNetwork(pl.LightningModule):
     def __init__(
@@ -197,12 +86,13 @@ class ClassificationNetwork(pl.LightningModule):
         self.weight_decay = weight_decay
         self.patience = patience
 
-        self.net = HSITextureClassifier(
+        self.net = Patch64TinyClassifier(
             in_channels=in_channels,
             num_classes=num_classes,
-            width=width,
+            spectral_width=4,
+            spatial_width=8,
             dropout=dropout,
-        )
+            )
 
         self.criterion = nn.CrossEntropyLoss(
             label_smoothing=label_smoothing
