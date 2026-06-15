@@ -304,12 +304,13 @@ class ClassificationNetwork(pl.LightningModule):
             weight_decay=self.weight_decay,
         )
 
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
             optimizer,
-            mode="min",
-            factor=0.5,
-            patience=self.patience,
-        )
+            T_0=20,
+            T_mult=2,
+            eta_min=self.lr * 0.01
+            )
+
 
         return {
             "optimizer": optimizer,
