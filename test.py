@@ -8,7 +8,7 @@ def main():
     # --------------------------------------------------
     # paths
     # --------------------------------------------------
-    checkpoint_path = "/Users/kolyszko/Scrivania/run_11_final/jointnet-epoch=328-val_loss=0.0662.ckpt"
+    checkpoint_path = "/Users/kolyszko/Scrivania/run_13_sony/jointnet-epoch=447-val_loss=0.0758.ckpt"
     led_path = "/Users/kolyszko/Documents/MATLAB/Thouslite5.mat"
     camera_path = "/Users/kolyszko/Documents/NIKON-D810.csv"
 
@@ -18,7 +18,7 @@ def main():
     model = JointNetwork.load_from_checkpoint(
         checkpoint_path,
         lr=1e-3,
-        model_type=1,
+        model_type=3,
         patience=50,
         n_ill=2,
         in_dim=6,  # 2 illuminanti -> 2 RGB -> 6 canali

@@ -4,7 +4,17 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 
 
-class ConvBNAct(nn.Module):
+class CReLU(nn.Module):
+    """
+    Concatenated ReLU:
+        CReLU(x) = concat(ReLU(x), ReLU(-x))
+    Raddoppia il numero di canali.
+    """
+    def forward(self, x):
+        return torch.cat([F.relu(x), F.relu(-x)], dim=1)
+
+
+class ConvBNReLU(nn.Module):
     def __init__(
         self,
         in_ch,
@@ -12,7 +22,7 @@ class ConvBNAct(nn.Module):
         kernel_size=3,
         stride=1,
         padding=None,
-        act=True
+        relu=True
     ):
         super().__init__()
 
@@ -29,94 +39,19 @@ class ConvBNAct(nn.Module):
         )
 
         self.bn = nn.BatchNorm2d(out_ch)
-        self.act = nn.GELU() if act else nn.Identity()
+        self.relu = nn.ReLU(inplace=True) if relu else nn.Identity()
 
     def forward(self, x):
-        return self.act(self.bn(self.conv(x)))
-
-
-class ResidualConvBlock(nn.Module):
-    """
-    Blocco residuale standard:
-        Conv 3x3 -> BN -> GELU
-        Conv 3x3 -> BN
-        residual
-    """
-
-    def __init__(self, channels, dropout=0.1):
-        super().__init__()
-
-        self.conv1 = ConvBNAct(
-            channels,
-            channels,
-            kernel_size=3,
-            act=True
-        )
-
-        self.conv2 = ConvBNAct(
-            channels,
-            channels,
-            kernel_size=3,
-            act=False
-        )
-
-        self.dropout = nn.Dropout2d(dropout)
-
-    def forward(self, x):
-        res = x
-
-        out = self.conv1(x)
-        out = self.conv2(out)
-        out = self.dropout(out)
-
-        return F.gelu(out + res)
-
-
-class SpectralChannelAttention(nn.Module):
-    """
-    SE-like attention sulle feature.
-    La terrei opzionale: può aiutare perché le bande/feature non hanno
-    tutte la stessa importanza.
-    """
-
-    def __init__(self, channels, reduction=8):
-        super().__init__()
-
-        hidden = max(channels // reduction, 4)
-
-        self.attn = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(channels, hidden, kernel_size=1),
-            nn.GELU(),
-            nn.Conv2d(hidden, channels, kernel_size=1),
-            nn.Sigmoid()
-        )
-
-    def forward(self, x):
-        w = self.attn(x)
-        return x * w
-
-
-class ResidualAttentionBlock(nn.Module):
-    def __init__(self, channels, dropout=0.1, use_attention=True):
-        super().__init__()
-
-        self.res_block = ResidualConvBlock(
-            channels=channels,
-            dropout=dropout
-        )
-
-        self.attn = SpectralChannelAttention(channels) if use_attention else nn.Identity()
-
-    def forward(self, x):
-        x = self.res_block(x)
-        x = self.attn(x)
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.relu(x)
         return x
 
 
-class HSITextureCNN_BN(nn.Module):
+class HSITextureAllConvNet(nn.Module):
     """
-    CNN 2D con BatchNorm per classificazione di patch HSI 64x64.
+    Rete all-convolutional ispirata al paper:
+    'CNN-Based Refactoring of Hand-Designed Filters for Texture Analysis'.
 
     Input:
         x: [B, C, 64, 64]
@@ -129,115 +64,80 @@ class HSITextureCNN_BN(nn.Module):
         self,
         in_channels=31,
         num_classes=15,
-        width=24,
-        dropout=0.25,
-        use_attention=True
+        n_filters=32,
+        dropout=0.3
     ):
         super().__init__()
 
         # --------------------------------------------------
-        # 64 x 64
+        # Layer 1: filter-bank learnable 11x11
+        # 64x64 -> 32x32 se stride=2
         # --------------------------------------------------
-        self.stem = nn.Sequential(
-            # mixing spettrale iniziale
-            ConvBNAct(
-                in_channels,
-                width,
-                kernel_size=1,
-                padding=0
-            ),
-
-            # feature spaziali locali
-            ConvBNAct(
-                width,
-                width,
-                kernel_size=3
-            )
+        self.filter_bank = nn.Conv2d(
+            in_channels,
+            n_filters,
+            kernel_size=11,
+            stride=2,
+            padding=5,
+            bias=False
         )
 
-        self.stage1 = nn.Sequential(
-            ResidualAttentionBlock(
-                width,
-                dropout=dropout,
-                use_attention=use_attention
-            )
-        )
+        self.crelu = CReLU()
+        self.bn0 = nn.BatchNorm2d(n_filters * 2)
+
+        ch = n_filters * 2
 
         # --------------------------------------------------
-        # 64 -> 32
+        # All-convolutional texture backbone
         # --------------------------------------------------
-        self.down1 = ConvBNAct(
-            width,
-            width * 2,
-            kernel_size=3,
-            stride=2
-        )
+        self.features = nn.Sequential(
+            # 32x32
+            ConvBNReLU(ch, 64, kernel_size=3, stride=1),
+            nn.Dropout2d(dropout),
 
-        self.stage2 = nn.Sequential(
-            ResidualAttentionBlock(
-                width * 2,
-                dropout=dropout,
-                use_attention=use_attention
-            )
+            # 32x32 -> 16x16
+            ConvBNReLU(64, 96, kernel_size=3, stride=2),
+
+            # 16x16
+            ConvBNReLU(96, 96, kernel_size=3, stride=1),
+            nn.Dropout2d(dropout),
+
+            # 16x16 -> 8x8
+            ConvBNReLU(96, 128, kernel_size=3, stride=2),
+
+            # 8x8
+            ConvBNReLU(128, 128, kernel_size=3, stride=1),
+            nn.Dropout2d(dropout),
+
+            # 8x8
+            ConvBNReLU(128, 192, kernel_size=3, stride=1),
         )
 
         # --------------------------------------------------
-        # 32 -> 16
+        # Local score maps
         # --------------------------------------------------
-        self.down2 = ConvBNAct(
-            width * 2,
-            width * 4,
-            kernel_size=3,
-            stride=2
-        )
-
-        self.stage3 = nn.Sequential(
-            ResidualAttentionBlock(
-                width * 4,
-                dropout=dropout,
-                use_attention=use_attention
-            )
-        )
-
-        # --------------------------------------------------
-        # 16 -> 8
-        # --------------------------------------------------
-        self.down3 = ConvBNAct(
-            width * 4,
-            width * 4,
-            kernel_size=3,
-            stride=2
-        )
-
-        self.stage4 = nn.Sequential(
-            ResidualAttentionBlock(
-                width * 4,
-                dropout=dropout,
-                use_attention=use_attention
-            )
-        )
-
         self.classifier = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
-            nn.Dropout(dropout),
-            nn.Linear(width * 4, num_classes)
+            nn.Conv2d(192, 256, kernel_size=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.Dropout2d(dropout),
+
+            nn.Conv2d(256, num_classes, kernel_size=1, bias=True)
         )
 
     def forward(self, x):
-        x = self.stem(x)
-        x = self.stage1(x)
+        # x: [B, C, 64, 64]
 
-        x = self.down1(x)
-        x = self.stage2(x)
+        x = self.filter_bank(x)   # [B, n_filters, 32, 32]
+        x = self.crelu(x)         # [B, 2*n_filters, 32, 32]
+        x = self.bn0(x)
 
-        x = self.down2(x)
-        x = self.stage3(x)
+        x = self.features(x)      # [B, 192, 8, 8]
+        x = self.classifier(x)    # [B, num_classes, 8, 8]
 
-        x = self.down3(x)
-        x = self.stage4(x)
+        # average score vector, come nel paper
+        logits = x.mean(dim=(2, 3))  # [B, num_classes]
 
-        logits = self.classifier(x)
         return logits
 
 class ClassificationNetwork(pl.LightningModule):
@@ -262,12 +162,11 @@ class ClassificationNetwork(pl.LightningModule):
         self.weight_decay = weight_decay
         self.patience = patience
 
-        self.net = HSITextureCNN_BN(
+        self.net = HSITextureAllConvNet(
             in_channels=in_channels,
             num_classes=num_classes,
-            width=width,
-            dropout=dropout,
-            use_attention=True
+            n_filters=32,
+            dropout=dropout
             )
 
         self.criterion = nn.CrossEntropyLoss(
