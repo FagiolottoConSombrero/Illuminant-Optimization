@@ -5,11 +5,6 @@ import pytorch_lightning as pl
 
 
 class CReLU(nn.Module):
-    """
-    Concatenated ReLU:
-        CReLU(x) = concat(ReLU(x), ReLU(-x))
-    Raddoppia il numero di canali.
-    """
     def forward(self, x):
         return torch.cat([F.relu(x), F.relu(-x)], dim=1)
 
@@ -42,22 +37,17 @@ class ConvBNReLU(nn.Module):
         self.relu = nn.ReLU(inplace=True) if relu else nn.Identity()
 
     def forward(self, x):
-        x = self.conv(x)
-        x = self.bn(x)
-        x = self.relu(x)
-        return x
+        return self.relu(self.bn(self.conv(x)))
 
 
-class HSITextureAllConvNet(nn.Module):
+class HSITextureAllConvGrayNet(nn.Module):
     """
-    Rete all-convolutional ispirata al paper:
-    'CNN-Based Refactoring of Hand-Designed Filters for Texture Analysis'.
-
-    Input:
-        x: [B, C, 64, 64]
-
-    Output:
-        logits: [B, num_classes]
+    Variante più fedele al paper:
+        HSI [B, C, H, W]
+        -> proiezione intensity/grayscale [B, 1, H, W]
+        -> filter bank 11x11
+        -> CReLU
+        -> all-conv classifier
     """
 
     def __init__(
@@ -65,16 +55,34 @@ class HSITextureAllConvNet(nn.Module):
         in_channels=31,
         num_classes=15,
         n_filters=32,
-        dropout=0.3
+        dropout=0.3,
+        freeze_gray=False
     ):
         super().__init__()
 
         # --------------------------------------------------
-        # Layer 1: filter-bank learnable 11x11
-        # 64x64 -> 32x32 se stride=2
+        # HSI -> grayscale / intensity image
+        # --------------------------------------------------
+        self.to_gray = nn.Conv2d(
+            in_channels,
+            1,
+            kernel_size=1,
+            bias=False
+        )
+
+        # inizializzazione: media delle bande
+        with torch.no_grad():
+            self.to_gray.weight.fill_(1.0 / in_channels)
+
+        if freeze_gray:
+            for p in self.to_gray.parameters():
+                p.requires_grad = False
+
+        # --------------------------------------------------
+        # Filter-bank 11x11 come nel paper
         # --------------------------------------------------
         self.filter_bank = nn.Conv2d(
-            in_channels,
+            1,
             n_filters,
             kernel_size=11,
             stride=2,
@@ -87,35 +95,28 @@ class HSITextureAllConvNet(nn.Module):
 
         ch = n_filters * 2
 
-        # --------------------------------------------------
-        # All-convolutional texture backbone
-        # --------------------------------------------------
         self.features = nn.Sequential(
-            # 32x32
+            # 32 x 32
             ConvBNReLU(ch, 64, kernel_size=3, stride=1),
             nn.Dropout2d(dropout),
 
-            # 32x32 -> 16x16
+            # 32 -> 16
             ConvBNReLU(64, 96, kernel_size=3, stride=2),
 
-            # 16x16
+            # 16 x 16
             ConvBNReLU(96, 96, kernel_size=3, stride=1),
             nn.Dropout2d(dropout),
 
-            # 16x16 -> 8x8
+            # 16 -> 8
             ConvBNReLU(96, 128, kernel_size=3, stride=2),
 
-            # 8x8
+            # 8 x 8
             ConvBNReLU(128, 128, kernel_size=3, stride=1),
             nn.Dropout2d(dropout),
 
-            # 8x8
             ConvBNReLU(128, 192, kernel_size=3, stride=1),
         )
 
-        # --------------------------------------------------
-        # Local score maps
-        # --------------------------------------------------
         self.classifier = nn.Sequential(
             nn.Conv2d(192, 256, kernel_size=1, bias=False),
             nn.BatchNorm2d(256),
@@ -127,6 +128,7 @@ class HSITextureAllConvNet(nn.Module):
     def forward(self, x):
         # x: [B, C, 64, 64]
 
+        x = self.to_gray(x)       # [B, 1, 64, 64]
         x = self.filter_bank(x)   # [B, n_filters, 32, 32]
         x = self.crelu(x)         # [B, 2*n_filters, 32, 32]
         x = self.bn0(x)
@@ -134,9 +136,7 @@ class HSITextureAllConvNet(nn.Module):
         x = self.features(x)      # [B, 192, 8, 8]
         x = self.classifier(x)    # [B, num_classes, 8, 8]
 
-        # average score vector, come nel paper
-        logits = x.mean(dim=(2, 3))  # [B, num_classes]
-
+        logits = x.mean(dim=(2, 3))
         return logits
 
 class ClassificationNetwork(pl.LightningModule):
