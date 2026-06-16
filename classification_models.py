@@ -1,33 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import pytorch_lightning as pl
 
 
-class SpectralDropout(nn.Module):
-    """
-    Dropout sulle feature/bande canale-wise.
-    Utile per evitare che il modello si appoggi troppo a poche bande.
-    """
-    def __init__(self, p=0.1):
-        super().__init__()
-        self.p = p
-
-    def forward(self, x):
-        if not self.training or self.p == 0:
-            return x
-
-        # x: [B, C, H, W]
-        mask = torch.rand(
-            x.size(0), x.size(1), 1, 1,
-            device=x.device,
-            dtype=x.dtype
-        ) > self.p
-
-        return x * mask / (1.0 - self.p)
-
-
-class ConvGNAct(nn.Module):
+class ConvBNAct(nn.Module):
     def __init__(
         self,
         in_ch,
@@ -35,7 +11,6 @@ class ConvGNAct(nn.Module):
         kernel_size=3,
         stride=1,
         padding=None,
-        groups=8,
         act=True
     ):
         super().__init__()
@@ -52,66 +27,95 @@ class ConvGNAct(nn.Module):
             bias=False
         )
 
-        num_groups = min(groups, out_ch)
-        while out_ch % num_groups != 0:
-            num_groups -= 1
-
-        self.norm = nn.GroupNorm(num_groups, out_ch)
+        self.bn = nn.BatchNorm2d(out_ch)
         self.act = nn.GELU() if act else nn.Identity()
 
     def forward(self, x):
-        return self.act(self.norm(self.conv(x)))
+        return self.act(self.bn(self.conv(x)))
 
 
-class DepthwiseSeparableBlock(nn.Module):
+class ResidualConvBlock(nn.Module):
     """
-    Residual block leggero:
-        depthwise 3x3 + pointwise 1x1
-
-    Mantiene capacità spaziale, ma riduce molto i parametri rispetto
-    a conv 3x3 dense.
+    Blocco residuale standard:
+        Conv 3x3 -> BN -> GELU
+        Conv 3x3 -> BN
+        residual
     """
-    def __init__(self, channels, dropout=0.2):
+
+    def __init__(self, channels, dropout=0.1):
         super().__init__()
 
-        self.dw = nn.Conv2d(
+        self.conv1 = ConvBNAct(
             channels,
             channels,
             kernel_size=3,
-            padding=1,
-            groups=channels,
-            bias=False
+            act=True
         )
 
-        self.norm1 = nn.GroupNorm(1, channels)
-
-        self.pw = nn.Conv2d(
+        self.conv2 = ConvBNAct(
             channels,
             channels,
-            kernel_size=1,
-            bias=False
+            kernel_size=3,
+            act=False
         )
 
-        self.norm2 = nn.GroupNorm(1, channels)
         self.dropout = nn.Dropout2d(dropout)
 
     def forward(self, x):
         res = x
 
-        out = self.dw(x)
-        out = F.gelu(self.norm1(out))
-
-        out = self.pw(out)
-        out = self.norm2(out)
-
+        out = self.conv1(x)
+        out = self.conv2(out)
         out = self.dropout(out)
 
         return F.gelu(out + res)
 
 
-class HSICompactResNetClassifier(nn.Module):
+class SpectralChannelAttention(nn.Module):
     """
-    CNN compatta ma realistica per patch HSI 64x64.
+    SE-like attention sulle feature.
+    La terrei opzionale: può aiutare perché le bande/feature non hanno
+    tutte la stessa importanza.
+    """
+
+    def __init__(self, channels, reduction=8):
+        super().__init__()
+
+        hidden = max(channels // reduction, 4)
+
+        self.attn = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(channels, hidden, kernel_size=1),
+            nn.GELU(),
+            nn.Conv2d(hidden, channels, kernel_size=1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        w = self.attn(x)
+        return x * w
+
+
+class ResidualAttentionBlock(nn.Module):
+    def __init__(self, channels, dropout=0.1, use_attention=True):
+        super().__init__()
+
+        self.res_block = ResidualConvBlock(
+            channels=channels,
+            dropout=dropout
+        )
+
+        self.attn = SpectralChannelAttention(channels) if use_attention else nn.Identity()
+
+    def forward(self, x):
+        x = self.res_block(x)
+        x = self.attn(x)
+        return x
+
+
+class HSITextureCNN_BN(nn.Module):
+    """
+    CNN 2D con BatchNorm per classificazione di patch HSI 64x64.
 
     Input:
         x: [B, C, 64, 64]
@@ -125,26 +129,43 @@ class HSICompactResNetClassifier(nn.Module):
         in_channels=31,
         num_classes=15,
         width=24,
-        dropout=0.35,
-        spectral_dropout=0.10
+        dropout=0.25,
+        use_attention=True
     ):
         super().__init__()
 
-        self.spectral_dropout = SpectralDropout(p=spectral_dropout)
-
+        # --------------------------------------------------
         # 64 x 64
+        # --------------------------------------------------
         self.stem = nn.Sequential(
-            ConvGNAct(in_channels, width, kernel_size=1, padding=0),
-            ConvGNAct(width, width, kernel_size=3),
+            # mixing spettrale iniziale
+            ConvBNAct(
+                in_channels,
+                width,
+                kernel_size=1,
+                padding=0
+            ),
+
+            # feature spaziali locali
+            ConvBNAct(
+                width,
+                width,
+                kernel_size=3
+            )
         )
 
         self.stage1 = nn.Sequential(
-            DepthwiseSeparableBlock(width, dropout=dropout),
-            DepthwiseSeparableBlock(width, dropout=dropout),
+            ResidualAttentionBlock(
+                width,
+                dropout=dropout,
+                use_attention=use_attention
+            )
         )
 
+        # --------------------------------------------------
         # 64 -> 32
-        self.down1 = ConvGNAct(
+        # --------------------------------------------------
+        self.down1 = ConvBNAct(
             width,
             width * 2,
             kernel_size=3,
@@ -152,12 +173,17 @@ class HSICompactResNetClassifier(nn.Module):
         )
 
         self.stage2 = nn.Sequential(
-            DepthwiseSeparableBlock(width * 2, dropout=dropout),
-            DepthwiseSeparableBlock(width * 2, dropout=dropout),
+            ResidualAttentionBlock(
+                width * 2,
+                dropout=dropout,
+                use_attention=use_attention
+            )
         )
 
+        # --------------------------------------------------
         # 32 -> 16
-        self.down2 = ConvGNAct(
+        # --------------------------------------------------
+        self.down2 = ConvBNAct(
             width * 2,
             width * 4,
             kernel_size=3,
@@ -165,8 +191,29 @@ class HSICompactResNetClassifier(nn.Module):
         )
 
         self.stage3 = nn.Sequential(
-            DepthwiseSeparableBlock(width * 4, dropout=dropout),
-            DepthwiseSeparableBlock(width * 4, dropout=dropout),
+            ResidualAttentionBlock(
+                width * 4,
+                dropout=dropout,
+                use_attention=use_attention
+            )
+        )
+
+        # --------------------------------------------------
+        # 16 -> 8
+        # --------------------------------------------------
+        self.down3 = ConvBNAct(
+            width * 4,
+            width * 4,
+            kernel_size=3,
+            stride=2
+        )
+
+        self.stage4 = nn.Sequential(
+            ResidualAttentionBlock(
+                width * 4,
+                dropout=dropout,
+                use_attention=use_attention
+            )
         )
 
         self.classifier = nn.Sequential(
@@ -177,8 +224,6 @@ class HSICompactResNetClassifier(nn.Module):
         )
 
     def forward(self, x):
-        x = self.spectral_dropout(x)
-
         x = self.stem(x)
         x = self.stage1(x)
 
@@ -187,6 +232,9 @@ class HSICompactResNetClassifier(nn.Module):
 
         x = self.down2(x)
         x = self.stage3(x)
+
+        x = self.down3(x)
+        x = self.stage4(x)
 
         logits = self.classifier(x)
         return logits
@@ -213,12 +261,12 @@ class ClassificationNetwork(pl.LightningModule):
         self.weight_decay = weight_decay
         self.patience = patience
 
-        self.net = HSICompactResNetClassifier(
+        self.net = HSITextureCNN_BN(
             in_channels=in_channels,
             num_classes=num_classes,
             width=width,
             dropout=dropout,
-            spectral_dropout=0.10
+            use_attention=True
             )
 
         self.criterion = nn.CrossEntropyLoss(
