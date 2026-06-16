@@ -277,7 +277,6 @@ def main():
         lr=args.lr,
         weight_decay=args.weight_decay,
         patience=args.patience,
-        width=args.width,
         dropout=args.dropout,
         label_smoothing=args.label_smoothing,
         freeze_gray=args.freeze_gray,
