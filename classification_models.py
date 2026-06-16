@@ -164,7 +164,7 @@ class ClassificationNetwork(pl.LightningModule):
         self.freeze_gray = freeze_gray
         self.n_filters = n_filters
 
-        self.net = HSITextureAllConvNet(
+        self.net = HSITextureAllConvGrayNet(
             in_channels=self.in_channels,
             num_classes=self.num_classes,
             n_filters=self.n_filters,
