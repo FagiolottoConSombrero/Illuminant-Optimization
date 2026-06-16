@@ -159,6 +159,8 @@ parser.add_argument("--seed", default=42, type=int)
 parser.add_argument("--width", default=64, type=int)
 parser.add_argument("--dropout", default=0.3, type=float)
 parser.add_argument("--label_smoothing", default=0.0, type=float)
+parser.add_argument("--freeze_gray", action="store_true", help="Se attivo, blocca la proiezione C->1 inizializzata come media delle bande")
+parser.add_argument("--n_filters", default=32, type=int, help="Numero di filtri nel primo filter-bank 11x11")
 
 # dataloader
 parser.add_argument("--num_workers", default=7, type=int)
@@ -277,8 +279,10 @@ def main():
         patience=args.patience,
         width=args.width,
         dropout=args.dropout,
-        label_smoothing=args.label_smoothing
-    )
+        label_smoothing=args.label_smoothing,
+        freeze_gray=args.freeze_gray,
+        n_filters=args.n_filters
+        )
 
     # --------------------------------------------------
     # 7. callbacks

@@ -5,14 +5,11 @@ import pytorch_lightning as pl
 
 
 class CReLU(nn.Module):
-<<<<<<< HEAD
     """
     Concatenated ReLU:
         CReLU(x) = concat(ReLU(x), ReLU(-x))
     Raddoppia il numero di canali.
     """
-=======
->>>>>>> 5cbd17c (add grayscale conversion)
     def forward(self, x):
         return torch.cat([F.relu(x), F.relu(-x)], dim=1)
 
@@ -45,7 +42,6 @@ class ConvBNReLU(nn.Module):
         self.relu = nn.ReLU(inplace=True) if relu else nn.Identity()
 
     def forward(self, x):
-<<<<<<< HEAD
         x = self.conv(x)
         x = self.bn(x)
         x = self.relu(x)
@@ -62,19 +58,6 @@ class HSITextureAllConvNet(nn.Module):
 
     Output:
         logits: [B, num_classes]
-=======
-        return self.relu(self.bn(self.conv(x)))
-
-
-class HSITextureAllConvGrayNet(nn.Module):
-    """
-    Variante più fedele al paper:
-        HSI [B, C, H, W]
-        -> proiezione intensity/grayscale [B, 1, H, W]
-        -> filter bank 11x11
-        -> CReLU
-        -> all-conv classifier
->>>>>>> 5cbd17c (add grayscale conversion)
     """
 
     def __init__(
@@ -82,17 +65,11 @@ class HSITextureAllConvGrayNet(nn.Module):
         in_channels=31,
         num_classes=15,
         n_filters=32,
-<<<<<<< HEAD
         dropout=0.3
-=======
-        dropout=0.3,
-        freeze_gray=False
->>>>>>> 5cbd17c (add grayscale conversion)
     ):
         super().__init__()
 
         # --------------------------------------------------
-<<<<<<< HEAD
         # Layer 1: filter-bank learnable 11x11
         # 64x64 -> 32x32 se stride=2
         # --------------------------------------------------
@@ -139,83 +116,17 @@ class HSITextureAllConvGrayNet(nn.Module):
         # --------------------------------------------------
         # Local score maps
         # --------------------------------------------------
-=======
-        # HSI -> grayscale / intensity image
-        # --------------------------------------------------
-        self.to_gray = nn.Conv2d(
-            in_channels,
-            1,
-            kernel_size=1,
-            bias=False
-        )
-
-        # inizializzazione: media delle bande
-        with torch.no_grad():
-            self.to_gray.weight.fill_(1.0 / in_channels)
-
-        if freeze_gray:
-            for p in self.to_gray.parameters():
-                p.requires_grad = False
-
-        # --------------------------------------------------
-        # Filter-bank 11x11 come nel paper
-        # --------------------------------------------------
-        self.filter_bank = nn.Conv2d(
-            1,
-            n_filters,
-            kernel_size=11,
-            stride=2,
-            padding=5,
-            bias=False
-        )
-
-        self.crelu = CReLU()
-        self.bn0 = nn.BatchNorm2d(n_filters * 2)
-
-        ch = n_filters * 2
-
-        self.features = nn.Sequential(
-            # 32 x 32
-            ConvBNReLU(ch, 64, kernel_size=3, stride=1),
-            nn.Dropout2d(dropout),
-
-            # 32 -> 16
-            ConvBNReLU(64, 96, kernel_size=3, stride=2),
-
-            # 16 x 16
-            ConvBNReLU(96, 96, kernel_size=3, stride=1),
-            nn.Dropout2d(dropout),
-
-            # 16 -> 8
-            ConvBNReLU(96, 128, kernel_size=3, stride=2),
-
-            # 8 x 8
-            ConvBNReLU(128, 128, kernel_size=3, stride=1),
-            nn.Dropout2d(dropout),
-
-            ConvBNReLU(128, 192, kernel_size=3, stride=1),
-        )
-
->>>>>>> 5cbd17c (add grayscale conversion)
         self.classifier = nn.Sequential(
             nn.Conv2d(192, 256, kernel_size=1, bias=False),
             nn.BatchNorm2d(256),
             nn.ReLU(inplace=True),
             nn.Dropout2d(dropout),
-<<<<<<< HEAD
-
-=======
->>>>>>> 5cbd17c (add grayscale conversion)
             nn.Conv2d(256, num_classes, kernel_size=1, bias=True)
         )
 
     def forward(self, x):
         # x: [B, C, 64, 64]
 
-<<<<<<< HEAD
-=======
-        x = self.to_gray(x)       # [B, 1, 64, 64]
->>>>>>> 5cbd17c (add grayscale conversion)
         x = self.filter_bank(x)   # [B, n_filters, 32, 32]
         x = self.crelu(x)         # [B, 2*n_filters, 32, 32]
         x = self.bn0(x)
@@ -223,13 +134,9 @@ class HSITextureAllConvGrayNet(nn.Module):
         x = self.features(x)      # [B, 192, 8, 8]
         x = self.classifier(x)    # [B, num_classes, 8, 8]
 
-<<<<<<< HEAD
         # average score vector, come nel paper
         logits = x.mean(dim=(2, 3))  # [B, num_classes]
 
-=======
-        logits = x.mean(dim=(2, 3))
->>>>>>> 5cbd17c (add grayscale conversion)
         return logits
 
 class ClassificationNetwork(pl.LightningModule):
@@ -240,9 +147,10 @@ class ClassificationNetwork(pl.LightningModule):
         lr=1e-3,
         weight_decay=1e-4,
         patience=20,
-        width=64,
         dropout=0.3,
         label_smoothing=0.0,
+        freeze_gray=True,
+        n_filters=32
     ):
         super().__init__()
 
@@ -253,21 +161,15 @@ class ClassificationNetwork(pl.LightningModule):
         self.lr = lr
         self.weight_decay = weight_decay
         self.patience = patience
+        self.freeze_gray = freeze_gray
+        self.n_filters = n_filters
 
-<<<<<<< HEAD
         self.net = HSITextureAllConvNet(
-            in_channels=in_channels,
-            num_classes=num_classes,
-            n_filters=32,
-            dropout=dropout
-=======
-        self.net = HSITextureAllConvGrayNet(
-            in_channels=in_channels,
-            num_classes=num_classes,
-            n_filters=32,
+            in_channels=self.in_channels,
+            num_classes=self.num_classes,
+            n_filters=self.n_filters,
             dropout=dropout,
-            freeze_gray=False
->>>>>>> 5cbd17c (add grayscale conversion)
+            freeze_gray=self.freeze_gray
             )
 
         self.criterion = nn.CrossEntropyLoss(
