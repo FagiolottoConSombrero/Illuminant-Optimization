@@ -852,3 +852,98 @@ class MST_Plus_Plus(nn.Module):
         h = h + feat
         h = self.to_spec(h)
         return h[:, :, :h_inp, :w_inp]
+    
+
+
+class ReconstructionNetwork(pl.LightningModule):
+    def __init__(self, lr=1e-3, patience=50, model_type=1, in_dim=3, camera_spd_path=''):
+        super().__init__()
+        self.model_type = model_type
+        self.save_hyperparameters()
+        self.lr = lr
+        self.patience = patience
+        self.in_dim = in_dim
+        self.camera_spd_path = camera_spd_path
+        self.psnr_metric = PeakSignalNoiseRatio(data_range=1.0)
+        self.sam_metric = SpectralAngleMapper()
+
+        if model_type == 1:
+            self.net = SRNet(in_channels=self.in_dim)  # poi clamp nella loss
+        elif model_type == 2:
+            self.net = SpectralMLP(in_dim=self.in_dim)
+        elif model_type == 3:
+            self.net = MST_Plus_Plus(in_channels=self.in_dim)
+
+    def forward(self, x):
+        rgb = render_rgb_d65(x, camera_sens=self.camera_spd_path)
+        return self.net(rgb)
+
+    def step(self, batch, stage):
+        ref = batch  # [B,31,H,W]
+
+        recon = self(ref)
+
+        # reconstruction loss
+        loss_rec = reconstruction_loss(recon, ref)
+
+        self.log(f"{stage}_loss", loss_rec, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
+
+        return loss_rec, recon, ref
+
+    def training_step(self, batch, batch_idx):
+        loss, _, _ = self.step(batch, "train")
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        loss, recon, ref = self.step(batch, "val")
+
+        # ogni 10 epoch calcola PSNR e SSIM
+        if self.current_epoch % 10 == 0:
+            recon_eval = recon.clamp(0, 1)
+            ref_eval = ref.clamp(0, 1)
+
+            sam_val = self.sam_metric(recon_eval, ref_eval)
+            psnr_val = self.psnr_metric(recon_eval, ref_eval)
+            ssim_val = spectral_ssim(recon_eval, ref_eval)
+
+            self.log("val_sam", sam_val, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
+            self.log("val_psnr", psnr_val, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
+            self.log("val_ssim", ssim_val, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
+
+            # stampa solo una volta per epoch
+            if batch_idx == 0:
+                print(
+                    f"[Epoch {self.current_epoch}] "
+                    f"val_sam={sam_val.item():.4f}, "
+                    f"val_psnr={psnr_val.item():.4f}, "
+                    f"val_ssim={ssim_val.item():.4f}"
+                )
+
+        return loss
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.AdamW(
+            self.net.parameters(),
+            lr=self.lr,
+            weight_decay=self.weight_decay,
+        )
+
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            optimizer,
+            T_0=20,
+            T_mult=2,
+            eta_min=self.lr * 0.01
+            )
+
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "monitor": "val_loss",
+            },
+        }
+
+
+def reconstruction_loss(pred, target):
+    return F.l1_loss(pred, target)

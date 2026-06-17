@@ -6,6 +6,27 @@ import scipy.io
 from torchmetrics.image import StructuralSimilarityIndexMeasure
 import kornia.color as kcolor
 
+def load_spectrum_400_700_10nm(csv_path, dtype=torch.float32):
+    """
+    Legge un CSV a due colonne:
+        colonna 0: wavelength [nm]
+        colonna 1: valore spettrale
+
+    Ritorna:
+        spectrum: [31] su 400:10:700 nm
+    """
+    data = np.loadtxt(csv_path, delimiter=",", skiprows=1)
+
+    wavelengths = data[:, 0]
+    values = data[:, 1]
+
+    target_wl = np.arange(400, 701, 10)  # [31]
+
+    # interpolazione robusta, anche se il CSV è a 1 nm
+    values_interp = np.interp(target_wl, wavelengths, values)
+
+    return torch.tensor(values_interp, dtype=dtype)
+
 
 def load_led_library(mat_path, device="cpu", dtype=torch.float32):
     data = scipy.io.loadmat(mat_path, squeeze_me=True, struct_as_record=False)
@@ -92,6 +113,28 @@ def render_rgb(reflectance, illuminants, camera_sens="/Users/kolyszko/Documents/
     rgb2 = rgb_multi[:, 1]  # [B, 3, H, W]
 
     return rgb1, rgb2
+
+def render_rgb_d65(reflectance, 
+                   d65_path="/Users/kolyszko/Documents/CIE_std_illum_D65.csv", 
+                   camera_sens="/Users/kolyszko/Documents/NIKON-D810.csv"):
+    """
+    reflectance : [B, 31, H, W]
+    illuminants : [K, 301]
+    camera_sens : [3, 31]
+
+    return:
+        rgb_multi   : [B, K, 3, H, W]
+    """
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    camera_spd = load_camera_SPD(camera_sens).to(device=device, dtype=reflectance.dtype)
+    d65 = spd = load_spectrum_400_700_10nm(d65_path).to(device=device, dtype=reflectance.dtype)  # ill[K, 301] ---> ill[K, 31]
+    # risposta spettrale combinata: [K, 3, 31]
+    response = response = camera_spd * d65[None, :]
+
+    # somma spettrale
+    rgb = torch.einsum("blhw,cl->bchw", reflectance, response)
+
+    return rgb
 
 
 def normalize_illuminants(illuminants, eps=1e-8):

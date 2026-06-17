@@ -21,7 +21,7 @@ parser.add_argument("--batch_size", default=4, type=int, help="batch size")
 parser.add_argument("--model", default=1, type=int, help="1: mlp ; 2: CNN ; 3: MST++")
 parser.add_argument("--patience", default=30, type=int, help="patience for early stopping")
 parser.add_argument("--epochs", default=1000, type=int, help="training epochs")
-parser.add_argument("--only_rendering", default=False, type=bool, help="True: optimize illuminant only")
+parser.add_argument("--training_type", default=2, type=bool, help="1:Ill only; 2:Joint; 3:Model only")
 
 
 
@@ -153,7 +153,7 @@ def main():
     # --------------------------------------------------
     # 5. model
     # --------------------------------------------------
-    if args.only_rendering:
+    if args.training_type==1:
         model = IllNetwork(
             lr=args.lr,
             patience=args.patience,
@@ -162,7 +162,7 @@ def main():
             camera_spd_path=camera_path
         )
 
-    else:
+    elif args.training_type==2:
         model = JointNetwork(
             lr=args.lr,
             patience=args.patience,
@@ -171,6 +171,13 @@ def main():
             in_dim=6,                # 2 illuminanti -> 2 RGB -> 6 canali
             lambda_ang=0.2,
             led_path=led_path,
+            camera_spd_path=camera_path
+        )
+    else:
+        model = ReconstructionNetwork(
+            lr=args.lr,
+            patience=args.patience,
+            model_type=args.model,
             camera_spd_path=camera_path
         )
 
