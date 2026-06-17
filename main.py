@@ -21,7 +21,7 @@ parser.add_argument("--batch_size", default=4, type=int, help="batch size")
 parser.add_argument("--model", default=1, type=int, help="1: mlp ; 2: CNN ; 3: MST++")
 parser.add_argument("--patience", default=30, type=int, help="patience for early stopping")
 parser.add_argument("--epochs", default=1000, type=int, help="training epochs")
-parser.add_argument("--training_type", default=2, type=bool, help="1:Ill only; 2:Joint; 3:Model only")
+parser.add_argument("--training_type", default=2, type=int, help="1:Ill only; 2:Joint; 3:Model only")
 
 
 
