@@ -863,6 +863,7 @@ class ReconstructionNetwork(pl.LightningModule):
         self.lr = lr
         self.patience = patience
         self.in_dim = in_dim
+        self.weight_decay=1e-4
         self.camera_spd_path = camera_spd_path
         self.psnr_metric = PeakSignalNoiseRatio(data_range=1.0)
         self.sam_metric = SpectralAngleMapper()
