@@ -869,9 +869,9 @@ class ReconstructionNetwork(pl.LightningModule):
         self.sam_metric = SpectralAngleMapper()
 
         if model_type == 1:
-            self.net = SRNet(in_channels=self.in_dim)  # poi clamp nella loss
-        elif model_type == 2:
             self.net = SpectralMLP(in_dim=self.in_dim)
+        elif model_type == 2:
+            self.net = SRNet(in_channels=self.in_dim)
         elif model_type == 3:
             self.net = MST_Plus_Plus(in_channels=self.in_dim)
 
