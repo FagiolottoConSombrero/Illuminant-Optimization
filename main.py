@@ -173,7 +173,7 @@ def main():
             led_path=led_path,
             camera_spd_path=camera_path
         )
-    else:
+    elif args.training_type==3:
         model = ReconstructionNetwork(
             lr=args.lr,
             patience=args.patience,
