@@ -115,7 +115,7 @@ def render_rgb(reflectance, illuminants, camera_sens="/Users/kolyszko/Documents/
     return rgb1, rgb2
 
 def render_rgb_d65(reflectance, 
-                   d65_path="/home/acp/DocumentiCIE_std_illum_D65.csv", 
+                   d65_path="/home/acp/Documenti/CIE_std_illum_D65.csv", 
                    camera_sens="/Users/kolyszko/Documents/NIKON-D810.csv"):
     """
     reflectance : [B, 31, H, W]
