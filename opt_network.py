@@ -863,8 +863,9 @@ class ReconstructionNetwork(pl.LightningModule):
         self.lr = lr
         self.patience = patience
         self.in_dim = in_dim
-        self.weight_decay=1e-4
+        self.weight_decay = 1e-4
         self.camera_spd_path = camera_spd_path
+
         self.psnr_metric = PeakSignalNoiseRatio(data_range=1.0)
         self.sam_metric = SpectralAngleMapper()
 
@@ -880,14 +881,20 @@ class ReconstructionNetwork(pl.LightningModule):
         return self.net(rgb)
 
     def step(self, batch, stage):
-        ref = batch  # [B,31,H,W]
+        ref = batch  # [B, 31, H, W]
 
         recon = self(ref)
 
-        # reconstruction loss
+        # reconstruction loss: MRAE
         loss_rec = reconstruction_loss(recon, ref)
 
-        self.log(f"{stage}_loss", loss_rec, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
+        self.log(
+            f"{stage}_loss",
+            loss_rec,
+            on_epoch=True,
+            prog_bar=True,
+            batch_size=ref.size(0)
+        )
 
         return loss_rec, recon, ref
 
@@ -898,7 +905,6 @@ class ReconstructionNetwork(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         loss, recon, ref = self.step(batch, "val")
 
-        # ogni 10 epoch calcola PSNR e SSIM
         if self.current_epoch % 10 == 0:
             recon_eval = recon.clamp(0, 1)
             ref_eval = ref.clamp(0, 1)
@@ -911,7 +917,6 @@ class ReconstructionNetwork(pl.LightningModule):
             self.log("val_psnr", psnr_val, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
             self.log("val_ssim", ssim_val, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
 
-            # stampa solo una volta per epoch
             if batch_idx == 0:
                 print(
                     f"[Epoch {self.current_epoch}] "
@@ -923,28 +928,34 @@ class ReconstructionNetwork(pl.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(
+        optimizer = torch.optim.Adam(
             self.net.parameters(),
             lr=self.lr,
-            weight_decay=self.weight_decay,
-        )
-
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            optimizer,
-            T_0=20,
-            T_mult=2,
-            eta_min=self.lr * 0.01
+            betas=(0.9, 0.999)
             )
 
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=self.trainer.estimated_stepping_batches,
+            eta_min=1e-6
+        )
 
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
-                "monitor": "val_loss",
+                "interval": "step",
+                "frequency": 1,
             },
         }
 
+def reconstruction_loss(pred, target, eps=1e-6):
+    """
+    MRAE loss.
 
-def reconstruction_loss(pred, target):
-    return F.l1_loss(pred, target)
+    pred   : [B, C, H, W]
+    target : [B, C, H, W]
+
+    L = mean( |pred - target| / (target + eps) )
+    """
+    return torch.mean(torch.abs(pred - target) / (target + eps))
