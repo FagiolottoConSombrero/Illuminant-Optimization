@@ -335,6 +335,7 @@ class JointNetwork(pl.LightningModule):
         self.patience = patience
         self.in_dim = in_dim
         self.lambda_ang = lambda_ang
+        self.weight_decay = 1e-4
         self.led_path = led_path
         self.camera_spd_path = camera_spd_path
         self.psnr_metric = PeakSignalNoiseRatio(data_range=1.0)
