@@ -413,14 +413,22 @@ class JointNetwork(pl.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        opt = torch.optim.Adam(self.parameters(), lr=self.lr)
-        sched = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            opt, mode="min", factor=0.5, patience=self.patience
+        optimizer = torch.optim.AdamW(
+            self.net.parameters(),
+            lr=self.lr,
+            weight_decay=self.weight_decay,
         )
+
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            optimizer,
+            T_0=20,
+            T_mult=2,
+            eta_min=self.lr * 0.01
+            )
         return {
-            "optimizer": opt,
+            "optimizer": optimizer,
             "lr_scheduler": {
-                "scheduler": sched,
+                "scheduler": scheduler,
                 "monitor": "val_loss"
             }}
 
