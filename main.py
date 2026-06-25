@@ -17,6 +17,7 @@ parser.add_argument("--patches", default=False, type=bool, help="True: read aggr
 
 # optimization
 parser.add_argument("--lr", default=1e-4, type=float, help="base learning rate")
+parser.add_argument("--n_ill", default=2, type=int, help="number of illuminant to opt")
 parser.add_argument("--batch_size", default=4, type=int, help="batch size")
 parser.add_argument("--model", default=1, type=int, help="1: mlp ; 2: CNN ; 3: MST++")
 parser.add_argument("--patience", default=30, type=int, help="patience for early stopping")
@@ -35,6 +36,7 @@ def main():
     led_path = args.led_path
     camera_path = args.camera_path
     checkpoint_dir = args.checkpoint_path
+    n_illuminant = args.n_ill
 
     os.makedirs(checkpoint_dir, exist_ok=True)
 
@@ -167,8 +169,8 @@ def main():
             lr=args.lr,
             patience=args.patience,
             model_type=args.model,
-            n_ill=2,
-            in_dim=6,                # 2 illuminanti -> 2 RGB -> 6 canali
+            n_ill=n_illuminant,
+            in_dim=3*n_illuminant,                # 2 illuminanti -> 2 RGB -> 6 canali
             lambda_ang=0.2,
             led_path=led_path,
             camera_spd_path=camera_path
