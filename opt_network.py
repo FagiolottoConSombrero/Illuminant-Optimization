@@ -374,12 +374,12 @@ class JointNetwork(pl.LightningModule):
         ref = batch  # [B, 31, H, W]
 
         # forward generale:
-        # output = (recon, ills, rgb1, rgb2, ..., rgbK)
+        # out = (recon, ills, rgb1, ..., rgbK)
         out = self(ref)
 
         recon = out[0]
         ills = out[1]
-        rgb_list = list(out[2:])  # lista di K immagini RGB, ognuna [B, 3, H, W]
+        rgb_list = list(out[2:])
 
         # --------------------------------------------------
         # reconstruction loss
@@ -387,16 +387,31 @@ class JointNetwork(pl.LightningModule):
         loss_rec = reconstruction_loss(recon, ref)
 
         # --------------------------------------------------
-        # illuminant spectral regularization
+        # caso singolo illuminante:
+        # usa solo la reconstruction loss
         # --------------------------------------------------
-        loss_illum, _ = illumination_spec_regularization(ills)
+        if self.n_ill == 1:
+            loss = loss_rec
+
+            loss_illum = torch.tensor(
+                0.0,
+                device=ref.device,
+                dtype=ref.dtype
+            )
+
+            loss_img = torch.tensor(
+                0.0,
+                device=ref.device,
+                dtype=ref.dtype
+            )
 
         # --------------------------------------------------
-        # image regularization
-        # se ho un solo illuminante, non la applico
-        # se ho più illuminanti, la applico su tutte le coppie
+        # caso multi-illuminante:
+        # usa reconstruction + regolarizzazioni
         # --------------------------------------------------
-        if len(rgb_list) > 1:
+        else:
+            loss_illum, _ = illumination_spec_regularization(ills)
+
             loss_img = 0.0
             num_pairs = 0
 
@@ -411,21 +426,10 @@ class JointNetwork(pl.LightningModule):
 
             loss_img = loss_img / num_pairs
 
-        else:
-            loss_img = torch.tensor(
-                0.0,
-                device=ref.device,
-                dtype=ref.dtype
-            )
+            w_illum = 3e-6
+            w_img = 1e-5
 
-        # --------------------------------------------------
-        # loss weights
-        # --------------------------------------------------
-        w_illum = 3e-6
-        w_img = 1e-5
-
-        # se n_ill == 1, loss_img = 0 automaticamente
-        loss = loss_rec + w_illum * loss_illum + w_img * loss_img
+            loss = loss_rec + w_illum * loss_illum + w_img * loss_img
 
         # --------------------------------------------------
         # logging
