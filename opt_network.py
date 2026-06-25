@@ -351,34 +351,116 @@ class JointNetwork(pl.LightningModule):
             self.net = MST_Plus_Plus(in_channels=self.in_dim)
 
     def forward(self, x):
-        # 1. Obtain Illuminants SPD
-        ills = self.ill_optimizer()
-        # 2.. Generate RGB Images
-        rgb1, rgb2 = render_rgb(x, ills, self.camera_spd_path)
-        in_rgb = torch.cat((rgb1, rgb2), dim=1)
-        return self.net(in_rgb), ills, rgb1, rgb2
+        # 1. Obtain illuminants SPD
+        ills = self.ill_optimizer()  # [K, L]
+
+        # 2. Generate RGB images for all illuminants
+        rgb_list = render_rgb(
+            reflectance=x,
+            illuminants=ills,
+            camera_sens=self.camera_spd_path
+        )
+        # rgb_list = tuple di K tensori [B, 3, H, W]
+
+        # 3. Concatenate all RGB images along channel dimension
+        in_rgb = torch.cat(rgb_list, dim=1)  # [B, 3*K, H, W]
+
+        # 4. Spectral reconstruction
+        recon = self.net(in_rgb)
+
+        return recon, ills, *rgb_list
 
     def step(self, batch, stage):
-        ref = batch  # [B,31,H,W]
+        ref = batch  # [B, 31, H, W]
 
-        recon, ills, rgb1, rgb2 = self(ref)
+        # forward generale:
+        # output = (recon, ills, rgb1, rgb2, ..., rgbK)
+        out = self(ref)
 
+        recon = out[0]
+        ills = out[1]
+        rgb_list = list(out[2:])  # lista di K immagini RGB, ognuna [B, 3, H, W]
+
+        # --------------------------------------------------
         # reconstruction loss
+        # --------------------------------------------------
         loss_rec = reconstruction_loss(recon, ref)
 
-        # illuminant regularization
-        #loss_illum = self.ill_loss(ills, [rgb1, rgb2])
+        # --------------------------------------------------
+        # illuminant spectral regularization
+        # --------------------------------------------------
         loss_illum, _ = illumination_spec_regularization(ills)
-        # img regularization
-        loss_img, _ = illumination_img_regularization(rgb1, rgb2)
+
+        # --------------------------------------------------
+        # image regularization
+        # se ho un solo illuminante, non la applico
+        # se ho più illuminanti, la applico su tutte le coppie
+        # --------------------------------------------------
+        if len(rgb_list) > 1:
+            loss_img = 0.0
+            num_pairs = 0
+
+            for i in range(len(rgb_list)):
+                for j in range(i + 1, len(rgb_list)):
+                    pair_loss, _ = illumination_img_regularization(
+                        rgb_list[i],
+                        rgb_list[j]
+                    )
+                    loss_img = loss_img + pair_loss
+                    num_pairs += 1
+
+            loss_img = loss_img / num_pairs
+
+        else:
+            loss_img = torch.tensor(
+                0.0,
+                device=ref.device,
+                dtype=ref.dtype
+            )
+
+        # --------------------------------------------------
+        # loss weights
+        # --------------------------------------------------
         w_illum = 3e-6
         w_img = 1e-5
 
+        # se n_ill == 1, loss_img = 0 automaticamente
         loss = loss_rec + w_illum * loss_illum + w_img * loss_img
 
-        #loss = loss_rec + loss_illum
+        # --------------------------------------------------
+        # logging
+        # --------------------------------------------------
+        self.log(
+            f"{stage}_loss",
+            loss,
+            on_epoch=True,
+            prog_bar=True,
+            batch_size=ref.size(0)
+        )
 
-        self.log(f"{stage}_loss", loss, on_epoch=True, prog_bar=True, batch_size=ref.size(0))
+        self.log(
+            f"{stage}_loss_rec",
+            loss_rec,
+            on_epoch=True,
+            prog_bar=False,
+            batch_size=ref.size(0)
+        )
+
+        self.log(
+            f"{stage}_loss_illum",
+            loss_illum,
+            on_epoch=True,
+            prog_bar=False,
+            batch_size=ref.size(0)
+        )
+
+        self.log(
+            f"{stage}_loss_img",
+            loss_img,
+            on_epoch=True,
+            prog_bar=False,
+            batch_size=ref.size(0)
+        )
 
         return loss, recon, ref
 

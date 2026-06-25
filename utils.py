@@ -97,25 +97,34 @@ def render_rgb(reflectance, illuminants, camera_sens="/Users/kolyszko/Documents/
     camera_sens : [3, 31]
 
     return:
-        rgb_multi   : [B, K, 3, H, W]
+        rgb_list : tuple di K tensori, ciascuno [B, 3, H, W]
     """
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    camera_spd = load_camera_SPD(camera_sens)
-    illuminants = illuminants[:, ::10]  # ill[K, 301] ---> ill[K, 31]
-    # risposta spettrale combinata: [K, 3, 31]
+
+    device = reflectance.device
+
+    camera_spd = load_camera_SPD(camera_sens)      # [3, 31]
+    illuminants = illuminants[:, ::10]             # [K, 301] -> [K, 31]
+
     illuminants = illuminants.to(device=device, dtype=reflectance.dtype)
     camera_spd = camera_spd.to(device=device, dtype=reflectance.dtype)
+
+    # risposta spettrale combinata: [K, 3, 31]
     response = illuminants[:, None, :] * camera_spd[None, :, :]
 
-    # somma spettrale
-    rgb_multi = torch.einsum("blhw,kcl->bkchw", reflectance, response)
-    rgb1 = rgb_multi[:, 0]  # [B, 3, H, W]
-    rgb2 = rgb_multi[:, 1]  # [B, 3, H, W]
+    # rendering RGB per tutti gli illuminanti
+    rgb_multi = torch.einsum(
+        "blhw,kcl->bkchw",
+        reflectance,
+        response
+    )  # [B, K, 3, H, W]
 
-    return rgb1, rgb2
+    # tuple di K immagini RGB: ogni elemento [B, 3, H, W]
+    rgb_list = tuple(rgb_multi[:, k] for k in range(rgb_multi.shape[1]))
+
+    return rgb_list
 
 def render_rgb_d65(reflectance, 
-                   d65_path="/home/acp/Documenti/CIE_std_illum_D65.csv", 
+                   d65_path="/Users/kolyszko/Documents/MATLAB/ISETCam-BeyondRGB/CIE_std_illum_D65.csv", 
                    camera_sens="/Users/kolyszko/Documents/NIKON-D810.csv"):
     """
     reflectance : [B, 31, H, W]
