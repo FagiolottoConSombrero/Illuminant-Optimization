@@ -501,23 +501,25 @@ class JointNetwork(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
-            self.net.parameters(),
+            list(self.net.parameters()) + list(self.ill_optimizer.parameters()),
             lr=self.lr,
-            weight_decay=self.weight_decay,
+            betas=(0.9, 0.999)
         )
 
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer,
-            T_0=20,
-            T_mult=2,
-            eta_min=self.lr * 0.01
-            )
+            T_max=self.trainer.estimated_stepping_batches,
+            eta_min=1e-6
+        )
+
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
-                "monitor": "val_loss"
-            }}
+                "interval": "step",
+                "frequency": 1,
+            },
+        }
 
 
 def reconstruction_loss(pred, target):
