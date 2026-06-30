@@ -90,10 +90,16 @@ def load_camera_SPD(csv_path):
     return camera_sens
 
 
-def render_rgb(reflectance, illuminants, camera_sens="/Users/kolyszko/Documents/NIKON-D810.csv"):
+def render_rgb(
+    reflectance,
+    illuminants,
+    camera_sens="/Users/kolyszko/Documents/NIKON-D810.csv",
+    eps=1e-8,
+    white_normalize=True
+):
     """
     reflectance : [B, 31, H, W]
-    illuminants : [K, 301]
+    illuminants : [K, 301] oppure [K, 31]
     camera_sens : [3, 31]
 
     return:
@@ -102,46 +108,89 @@ def render_rgb(reflectance, illuminants, camera_sens="/Users/kolyszko/Documents/
 
     device = reflectance.device
 
-    camera_spd = load_camera_SPD(camera_sens)      # [3, 31]
-    illuminants = illuminants[:, ::10]             # [K, 301] -> [K, 31]
+    camera_spd = load_camera_SPD(camera_sens).to(
+        device=device,
+        dtype=reflectance.dtype
+    )  # [3, 31]
 
-    illuminants = illuminants.to(device=device, dtype=reflectance.dtype)
-    camera_spd = camera_spd.to(device=device, dtype=reflectance.dtype)
+    illuminants = illuminants.to(
+        device=device,
+        dtype=reflectance.dtype
+    )
 
-    # risposta spettrale combinata: [K, 3, 31]
+    # [K, 301] -> [K, 31]
+    if illuminants.shape[-1] == 301:
+        illuminants = illuminants[:, ::10]
+
+    # response: [K, 3, 31]
     response = illuminants[:, None, :] * camera_spd[None, :, :]
 
-    # rendering RGB per tutti gli illuminanti
+    # raw rendering: [B, K, 3, H, W]
     rgb_multi = torch.einsum(
         "blhw,kcl->bkchw",
         reflectance,
         response
-    )  # [B, K, 3, H, W]
+    )
 
-    # tuple di K immagini RGB: ogni elemento [B, 3, H, W]
+    if white_normalize:
+        # risposta RGB di una superficie bianca R(lambda)=1
+        # [K, 3]
+        white_response = response.sum(dim=-1)
+
+        rgb_multi = rgb_multi / (
+            white_response[None, :, :, None, None] + eps
+        )
+
     rgb_list = tuple(rgb_multi[:, k] for k in range(rgb_multi.shape[1]))
 
     return rgb_list
 
-def render_rgb_d65(reflectance, 
-                   d65_path="/Users/kolyszko/Documents/MATLAB/ISETCam-BeyondRGB/CIE_std_illum_D65.csv", 
-                   camera_sens="/Users/kolyszko/Documents/NIKON-D810.csv"):
+def render_rgb_d65(
+    reflectance,
+    d65_path="/Users/kolyszko/Documents/MATLAB/ISETCam-BeyondRGB/CIE_std_illum_D65.csv",
+    camera_sens="/Users/kolyszko/Documents/NIKON-D810.csv",
+    eps=1e-8,
+    white_normalize=True
+):
     """
     reflectance : [B, 31, H, W]
-    illuminants : [K, 301]
+    d65         : [31]
     camera_sens : [3, 31]
 
     return:
-        rgb_multi   : [B, K, 3, H, W]
+        rgb : [B, 3, H, W]
     """
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    camera_spd = load_camera_SPD(camera_sens).to(device=device, dtype=reflectance.dtype)
-    d65 = spd = load_spectrum_400_700_10nm(d65_path).to(device=device, dtype=reflectance.dtype)  # ill[K, 301] ---> ill[K, 31]
-    # risposta spettrale combinata: [K, 3, 31]
-    response = response = camera_spd * d65[None, :]
 
-    # somma spettrale
-    rgb = torch.einsum("blhw,cl->bchw", reflectance, response)
+    device = reflectance.device
+
+    camera_spd = load_camera_SPD(camera_sens).to(
+        device=device,
+        dtype=reflectance.dtype
+    )  # [3, 31]
+
+    d65 = load_spectrum_400_700_10nm(d65_path).to(
+        device=device,
+        dtype=reflectance.dtype
+    )  # [31]
+
+    # response: [3, 31]
+    response = camera_spd * d65[None, :]
+
+    # raw rendering: [B, 3, H, W]
+    rgb = torch.einsum(
+        "blhw,cl->bchw",
+        reflectance,
+        response
+    )
+
+    if white_normalize:
+        # risposta RGB di una superficie bianca R(lambda)=1
+        # [3]
+        white_response = response.sum(dim=-1)
+
+        rgb = rgb / (
+            white_response[None, :, None, None] + eps
+        )
 
     return rgb
 
