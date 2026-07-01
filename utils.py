@@ -147,7 +147,7 @@ def render_rgb(
 
 def render_rgb_d65(
     reflectance,
-    d65_path="/Users/kolyszko/Documents/MATLAB/ISETCam-BeyondRGB/CIE_std_illum_D65.csv",
+    d65_path="/home/acp/Documenti/CIE_std_illum_D65.csv",
     camera_sens="/Users/kolyszko/Documents/NIKON-D810.csv",
     eps=1e-8,
     white_normalize=True
